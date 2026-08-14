@@ -1,0 +1,97 @@
+# Sysible Server — Debian-native package set (headless, no GUI).
+# The non-Debian vendor tools (Docker CE, kubectl, Helm, OpenTofu, k9s, SOPS)
+# are installed by config/hooks/normal/8000-sysible-server-vendor-tools.hook.chroot.
+
+# --- base system + administration ---
+sudo
+openssh-server
+openssh-client
+curl
+wget
+git
+vim
+nano
+tmux
+screen
+rsync
+less
+tree
+bash-completion
+ca-certificates
+gnupg
+lsb-release
+apt-transport-https
+software-properties-common
+unattended-upgrades
+needrestart
+cron
+logrotate
+chrony
+# libpam-pwquality enforces the password-quality floor (policy in
+# /etc/security/pwquality.conf.d) so a server account can't get a weak password.
+libpam-pwquality
+
+# --- networking / diagnostics ---
+net-tools
+iproute2
+iputils-ping
+dnsutils
+mtr-tiny
+traceroute
+tcpdump
+nmap
+netcat-openbsd
+iperf3
+ethtool
+nftables
+socat
+whois
+
+# --- observability / troubleshooting ---
+htop
+btop
+iotop
+sysstat
+ncdu
+smartmontools
+lsof
+strace
+lm-sensors
+procps
+psmisc
+
+# --- modern CLI ---
+jq
+ripgrep
+fd-find
+bat
+fzf
+
+# --- languages / automation base ---
+python3
+python3-pip
+python3-venv
+pipx
+build-essential
+ansible
+ansible-lint
+
+# --- containers (Debian-native, rootless-friendly; Docker CE added by the hook) ---
+podman
+buildah
+skopeo
+
+# --- security / hardening ---
+openssl
+fail2ban
+auditd
+apparmor
+apparmor-utils
+
+# --- archives ---
+unzip
+zip
+bzip2
+gzip
+xz-utils
+p7zip-full

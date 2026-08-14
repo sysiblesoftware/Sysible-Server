@@ -1,0 +1,28 @@
+#!/bin/sh
+# live-build configuration for the Sysible Server ISO — a headless, no-GUI
+# Debian-based server base. Same bootloader/arch handling as Sysible Workstation,
+# but nothing graphical is installed (no GNOME, no Calamares, no desktop apps).
+set -e
+
+# Architecture is parameterized (SYSIBLE_ARCH): amd64 (default) or arm64.
+# amd64 gets the hybrid BIOS+UEFI bootloaders; arm64 is UEFI-only.
+ARCH="${SYSIBLE_ARCH:-amd64}"
+if [ "$ARCH" = "arm64" ]; then
+  BOOTLOADERS="grub-efi"
+else
+  BOOTLOADERS="syslinux,grub-efi"
+fi
+
+lb config noauto \
+  --distribution "${SYSIBLE_CODENAME:-bookworm}" \
+  --archive-areas "main contrib non-free non-free-firmware" \
+  --architectures "$ARCH" \
+  --bootloaders "$BOOTLOADERS" \
+  --binary-images iso-hybrid \
+  --debian-installer none \
+  --bootappend-live "boot=live components username=sysible user-fullname=Sysible user-default-groups=sudo,docker,adm" \
+  --iso-application "Sysible Server" \
+  --iso-publisher "Sysible" \
+  --iso-volume "Sysible Server" \
+  --memtest none \
+  "${@}"

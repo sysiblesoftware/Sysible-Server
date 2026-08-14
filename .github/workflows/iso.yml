@@ -1,0 +1,152 @@
+name: ISO
+
+# Build the Sysible Server ISO on GitHub's runners (network not HTTPS-inspected,
+# so the vendor tools — Docker, kubectl, Helm, OpenTofu — bake in). Download the
+# finished .iso from the run's Artifacts, or — on a version tag (v*) — from the
+# published GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture'
+        type: choice
+        options: [amd64, arm64]
+        default: amd64
+      release:
+        description: 'Publish a GitHub Release (split ISO + checksums)'
+        type: boolean
+        default: false
+      tag:
+        description: 'Release tag to create/use (only when release=true)'
+        type: string
+        default: v1.0.0
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  iso:
+    runs-on: ${{ (github.event.inputs.arch == 'arm64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    container:
+      image: debian:bookworm
+      options: --privileged   # live-build needs mount/loop/chroot
+    env:
+      SYSIBLE_ARCH: ${{ github.event.inputs.arch || 'amd64' }}
+    steps:
+      - name: Prereqs for checkout
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Build the ISO
+        run: |
+          cd live-build
+          ./build.sh
+
+      - name: Show result
+        run: ls -lh live-build/*.iso
+
+      - name: Upload ISO (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sysible-server-${{ env.SYSIBLE_ARCH }}-iso
+          path: live-build/*.iso
+          if-no-files-found: error
+          compression-level: 0
+
+      # ---- release-only steps (tag push, or a dispatch with release=true) --
+      - name: Split ISO for release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release
+        run: |
+          set -e
+          apt-get install -y --no-install-recommends coreutils
+          A="${SYSIBLE_ARCH:-amd64}"
+          mkdir -p release
+          ISO=$(ls live-build/*.iso | head -1)
+          BASE=$(basename "$ISO")
+          cd release
+          sha256sum -b "../$ISO" | sed "s| .*| *$BASE|" > "SHA256SUMS.$A"
+          # Release assets cap at 2 GiB, so split into 1900 MiB parts (a small
+          # server ISO simply produces a single .00.part — reassembly still works).
+          split -b 1900M -d --additional-suffix=.part "../$ISO" "$BASE."
+          sha256sum -b "$BASE".*.part > "SHA256SUMS.$A.parts"
+          cat > "REASSEMBLE.$A.md" <<EOF
+          # Sysible Server ($A) — reassemble the ISO
+
+          Download every \`$BASE.*.part\`, plus \`SHA256SUMS.$A\` and
+          \`SHA256SUMS.$A.parts\` (and their \`.gpg\` signatures if present), into
+          one folder, then:
+
+          \`\`\`sh
+          sha256sum -c SHA256SUMS.$A.parts     # verify the downloaded parts
+          cat $BASE.*.part > $BASE             # reassemble
+          sha256sum -c SHA256SUMS.$A           # verify the whole ISO
+          \`\`\`
+
+          Then write \`$BASE\` to a USB stick (\`dd\`, Etcher) and boot it. Sysible
+          Server boots to a console; SSH is enabled (hardened, no root login).
+          EOF
+          ls -lh
+
+      # Sign the checksum manifests IF the release key is configured. Best-effort:
+      # if SYSIBLE_GPG_PRIVATE_KEY isn't set on this repo yet, skip signing (the
+      # checksums still ship) rather than failing the release. Add the secret to
+      # publish signed releases.
+      - name: Sign the checksum manifests (if key present)
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release
+        env:
+          SYSIBLE_GPG_PRIVATE_KEY: ${{ secrets.SYSIBLE_GPG_PRIVATE_KEY }}
+        run: |
+          set -e
+          if [ -z "$SYSIBLE_GPG_PRIVATE_KEY" ]; then
+            echo "::warning::SYSIBLE_GPG_PRIVATE_KEY not set — publishing unsigned checksums. Add the secret to ship signed releases."
+            exit 0
+          fi
+          apt-get install -y --no-install-recommends gnupg
+          GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+          printf '%s' "$SYSIBLE_GPG_PRIVATE_KEY" | gpg --batch --import
+          KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/{print $5; exit}')
+          cd release
+          for f in SHA256SUMS.*; do
+            case "$f" in *.gpg) continue ;; esac
+            gpg --batch --yes --local-user "$KEYID" --armor --detach-sign -o "$f.gpg" "$f"
+            gpg --batch --verify "$f.gpg" "$f"
+          done
+          gpgconf --kill all 2>/dev/null || true
+          rm -rf "$GNUPGHOME"
+
+      # SECURITY TODO: pin this action to a full commit SHA before public release.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          name: Sysible Server ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          files: |
+            release/*.part
+            release/SHA256SUMS.*
+            release/REASSEMBLE.*.md
+          generate_release_notes: false
+          append_body: false
+          body: |
+            **Sysible Server 1.0.0 “Forge”** — a headless Debian-based server base.
+
+            No GUI — boots to a console. Ships the container, Kubernetes, IaC,
+            networking, observability and security tooling to run server software:
+            Docker CE, kubectl, Helm, OpenTofu, k9s, SOPS, podman/buildah/skopeo,
+            Ansible, nftables, fail2ban/auditd/AppArmor, and the modern CLI set.
+
+            SSH is enabled and hardened (no root login); password auth is left on
+            so a fresh box is reachable before keys are provisioned — switch to
+            key-only once your keys are in place.
+
+            ### Downloads (amd64 & arm64)
+            Each build ships as numbered `*.part` files (GitHub caps release
+            assets at 2 GB). Download every `*.part` for your architecture plus
+            `SHA256SUMS.<arch>*`, then reassemble per `REASSEMBLE.<arch>.md`.
+          fail_on_unmatched_files: true
