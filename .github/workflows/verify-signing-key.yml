@@ -1,0 +1,43 @@
+name: Verify signing key
+
+# Manual, no-ISO sanity check that the SYSIBLE_GPG_PRIVATE_KEY secret is set and
+# is a valid, usable signing key. It imports the key, prints ONLY the key id /
+# fingerprint / uid (public info — never the private material), and does a test
+# detached-sign + verify of a throwaway file, exactly like the release step in
+# iso.yml. Safe to run anytime; it builds nothing and publishes nothing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Import the release key and test sign/verify
+        env:
+          SYSIBLE_GPG_PRIVATE_KEY: ${{ secrets.SYSIBLE_GPG_PRIVATE_KEY }}
+        run: |
+          set -e
+          if [ -z "$SYSIBLE_GPG_PRIVATE_KEY" ]; then
+            echo "::error::SYSIBLE_GPG_PRIVATE_KEY is empty or not set on this repository."
+            exit 1
+          fi
+          export GNUPGHOME="$(mktemp -d)"; chmod 700 "$GNUPGHOME"
+          printf '%s' "$SYSIBLE_GPG_PRIVATE_KEY" | gpg --batch --import
+          KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/{print $5; exit}')
+          if [ -z "$KEYID" ]; then
+            echo "::error::The secret imported, but no SECRET key was found — it may be a public key, truncated, or malformed."
+            exit 1
+          fi
+          echo "== imported secret key =="
+          echo "key id:      $KEYID"
+          gpg --fingerprint --with-colons | awk -F: '/^fpr:/{print "fingerprint: "$10; exit}'
+          gpg --list-secret-keys --keyid-format=long | grep -E '^(sec|uid)' || true
+          echo "== test sign + verify =="
+          echo "sysible-signing-selftest" > selftest.txt
+          gpg --batch --yes --local-user "$KEYID" --armor --detach-sign -o selftest.txt.asc selftest.txt
+          gpg --batch --verify selftest.txt.asc selftest.txt
+          gpgconf --kill all 2>/dev/null || true
+          echo "OK: SYSIBLE_GPG_PRIVATE_KEY imports and signs+verifies — releases will be signed."
