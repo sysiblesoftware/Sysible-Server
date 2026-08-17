@@ -18,8 +18,14 @@ echo "Building for architecture: $ARCH"
 
 # --- host tooling + trust store -------------------------------------------
 $SUDO apt-get update -qq || true
+# cpio/wget/rsync/dosfstools/mtools are needed by live-build's
+# installer_debian-installer stage (we ship the text-mode Debian Installer via
+# --debian-installer live). The Workstation image used --debian-installer none
+# (Calamares), so that stage never ran and these weren't required — hence
+# "cpio: not found" once the server switched installers.
 $SUDO apt-get install -y --no-install-recommends \
-    live-build ca-certificates curl gnupg sudo openssl xorriso || true
+    live-build ca-certificates curl gnupg sudo openssl xorriso \
+    cpio wget rsync dosfstools mtools || true
 $SUDO update-ca-certificates || true
 if ls config/extra-ca/*.crt >/dev/null 2>&1; then
     $SUDO cp config/extra-ca/*.crt /usr/local/share/ca-certificates/ || true
