@@ -25,7 +25,7 @@ $SUDO apt-get update -qq || true
 # "cpio: not found" once the server switched installers.
 $SUDO apt-get install -y --no-install-recommends \
     live-build ca-certificates curl gnupg sudo openssl xorriso \
-    cpio wget rsync dosfstools mtools || true
+    cpio wget rsync dosfstools mtools xz-utils zstd || true
 $SUDO update-ca-certificates || true
 if ls config/extra-ca/*.crt >/dev/null 2>&1; then
     $SUDO cp config/extra-ca/*.crt /usr/local/share/ca-certificates/ || true
@@ -217,6 +217,85 @@ PY
     fi
     rm -rf "$WORK"
     echo "===== end GRUB branding ====="
+fi
+
+# --- Sysible-brand the Debian Installer banner -----------------------------
+# The graphical Debian Installer shows Debian's own banner (the "debian 12" mark:
+# usr/share/graphics/logo_installer.png + logo_debian.png), baked into the
+# installer initrd. There is no clean live-build override, so patch it HERE in the
+# finished ISO — same pattern as the GRUB rebrand above, and from $PWD=live-build
+# with $ROOT known so the banner asset is always found (a live-build binary hook
+# ran from a different CWD and couldn't find it, which is why the first attempt
+# no-op'd). Discovery is CONTENT-BASED: we look inside each initrd for the banner
+# file, so it never depends on the exact d-i path. The repacked initrd is mapped
+# back with `-boot_image any keep` so the El Torito/isohybrid boot structures
+# survive, then re-extracted and checksum-verified. Best-effort: never fails the
+# build, and on a miss it prints the real graphics paths for a one-shot fix.
+BANNER="$ROOT/branding/installer/logo_installer.png"
+_dicat() {  # decompress an initrd to stdout by magic bytes (gzip / xz / zstd / raw)
+    case "$(od -An -tx1 -N4 "$1" 2>/dev/null | tr -d ' \n')" in
+        1f8b*)      gzip -dc "$1" 2>/dev/null ;;
+        fd377a58*)  xz -dc "$1" 2>/dev/null ;;
+        28b52ffd*)  zstd -dc "$1" 2>/dev/null ;;
+        *)          cat "$1" ;;
+    esac
+}
+if [ -n "$ISO" ] && [ -f "$BANNER" ] && command -v cpio >/dev/null 2>&1; then
+    echo "===== branding Debian Installer banner in $ISO ====="
+    di_patched=0
+    for initrd in $(find binary -type f \( -name 'initrd.gz' -o -name 'initrd.img' -o -name 'initrd' \) 2>/dev/null); do
+        # Cheap probe first (list contents, don't extract) so the big live-boot
+        # initrd — which has no installer graphics — is skipped untouched.
+        if ! _dicat "$initrd" | cpio -t --quiet 2>/dev/null | grep -qE 'usr/share/graphics/logo_(installer|debian)\.png'; then
+            continue
+        fi
+        magic="$(od -An -tx1 -N4 "$initrd" 2>/dev/null | tr -d ' \n')"
+        case "$magic" in 1f8b*) comp=gzip ;; fd377a58*) comp=xz ;; 28b52ffd*) comp=zstd ;; *) comp=raw ;; esac
+        echo "  installer initrd: $initrd ($comp)"
+        work=$(mktemp -d)
+        _dicat "$initrd" | ( cd "$work" && $SUDO cpio -idm --quiet 2>/dev/null ) || { rm -rf "$work"; continue; }
+        for g in logo_installer.png logo_debian.png; do
+            [ -e "$work/usr/share/graphics/$g" ] && $SUDO cp -f "$BANNER" "$work/usr/share/graphics/$g"
+        done
+        case "$comp" in
+            gzip) ( cd "$work" && find . | $SUDO cpio -o -H newc --quiet 2>/dev/null | gzip -9 ) > "$initrd.new" ;;
+            xz)   ( cd "$work" && find . | $SUDO cpio -o -H newc --quiet 2>/dev/null | xz -9 --check=crc32 ) > "$initrd.new" ;;
+            zstd) ( cd "$work" && find . | $SUDO cpio -o -H newc --quiet 2>/dev/null | zstd -19 -q ) > "$initrd.new" ;;
+            raw)  ( cd "$work" && find . | $SUDO cpio -o -H newc --quiet 2>/dev/null ) > "$initrd.new" ;;
+        esac
+        $SUDO mv -f "$initrd.new" "$initrd"; rm -rf "$work"
+        isopath="/${initrd#binary/}"
+        echo "  -> mapping patched initrd into ISO at $isopath"
+        $SUDO xorriso -boot_image any keep -dev "$ISO" -map "$initrd" "$isopath" -commit 2>&1 | tail -2
+        di_patched=$((di_patched + 1))
+    done
+    echo "Installer initrds rebranded: $di_patched"
+    if [ "$di_patched" = 0 ]; then
+        echo "!! WARNING: no installer initrd carried logo_installer.png — the installer keeps Debian branding."
+        echo "!! Graphics found across initrds (for a targeted fix):"
+        for initrd in $(find binary -type f -name 'initrd*' 2>/dev/null); do
+            g="$(_dicat "$initrd" | cpio -t --quiet 2>/dev/null | grep -iE 'graphics|logo|\.png' | head)"
+            [ -n "$g" ] && { echo "   --- $initrd ---"; echo "$g"; }
+        done
+    else
+        # Verify the banner actually landed in the shipped ISO.
+        echo "-- verify: re-extract a patched installer initrd from the ISO --"
+        vpath=""
+        for i in $(find binary -type f -name 'initrd.gz' 2>/dev/null); do
+            _dicat "$i" | cpio -t --quiet 2>/dev/null | grep -q 'usr/share/graphics/logo_installer.png' && { vpath="/${i#binary/}"; break; }
+        done
+        if [ -n "$vpath" ]; then
+            vd=$(mktemp -d); $SUDO xorriso -osirrox on -indev "$ISO" -extract "$vpath" "$vd/initrd.gz" 2>/dev/null || true
+            if [ -s "$vd/initrd.gz" ]; then
+                ve=$(mktemp -d); _dicat "$vd/initrd.gz" | ( cd "$ve" && cpio -idm --quiet 2>/dev/null ) || true
+                echo "   ISO banner md5 : $(md5sum "$ve/usr/share/graphics/logo_installer.png" 2>/dev/null | awk '{print $1}')"
+                echo "   sysible  md5   : $(md5sum "$BANNER" | awk '{print $1}')  <- must match"
+                rm -rf "$ve"
+            fi
+            rm -rf "$vd"
+        fi
+    fi
+    echo "===== end Installer banner branding ====="
 fi
 
 # --- verify boot branding landed in the built tree -------------------------
