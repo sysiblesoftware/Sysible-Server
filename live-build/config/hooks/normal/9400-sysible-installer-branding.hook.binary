@@ -1,0 +1,59 @@
+#!/bin/sh
+# Sysible-brand the Debian graphical installer banner.
+#
+# The graphical installer's banner ("debian 12": usr/share/graphics/
+# logo_installer.png + logo_debian.png) is baked into the installer initrd. We
+# patch it HERE, in the binary/ tree, as a BINARY hook — which live-build runs
+# during the binary stage BEFORE binary_iso assembles the ISO and BEFORE
+# binary_checksums computes md5sum.txt. That is the crucial difference from
+# editing the finished ISO with xorriso: doing it pre-assembly keeps the /install
+# directory structure intact (editing the built ISO materialised /install and
+# broke the path to vmlinuz -> "file /install/gtk/vmlinuz not found"), and the
+# checksums are computed over the already-patched initrd so integrity still
+# verifies.
+#
+# The banner asset is passed as an ABSOLUTE path via SYSIBLE_INSTALLER_BANNER
+# (exported by build.sh) so it resolves no matter what CWD live-build gives the
+# hook. Installer initrds are found by CONTENT (they contain the banner file), so
+# this never depends on the exact d-i path, and the live-boot initrd — which has
+# no such file — is skipped untouched. Best-effort: never fails the build; logs
+# what it patched (or warns) so a future path/format change is diagnosable.
+set -e
+
+BANNER="${SYSIBLE_INSTALLER_BANNER:-}"
+if [ -z "$BANNER" ] || [ ! -f "$BANNER" ]; then
+    echo "sysible-installer-branding: banner asset not found (SYSIBLE_INSTALLER_BANNER='$BANNER') — skipping." >&2
+    exit 0
+fi
+command -v cpio >/dev/null 2>&1 || { echo "sysible-installer-branding: cpio unavailable — skipping." >&2; exit 0; }
+
+patched=0
+# CWD during a binary hook is not guaranteed, so search from '.' for any gzip
+# initrd; the content probe below decides which are installer initrds.
+for initrd in $(find . -type f -name 'initrd.gz' 2>/dev/null); do
+    gzip -t "$initrd" 2>/dev/null || continue
+    if ! gzip -dc "$initrd" 2>/dev/null | cpio -t --quiet 2>/dev/null \
+         | grep -qE 'usr/share/graphics/logo_(installer|debian)\.png'; then
+        continue    # not an installer initrd (e.g. the live-boot initrd) — leave it alone
+    fi
+    work=$(mktemp -d)
+    gzip -dc "$initrd" 2>/dev/null | ( cd "$work" && cpio -idm --quiet 2>/dev/null ) || { rm -rf "$work"; continue; }
+    for g in logo_installer.png logo_debian.png; do
+        [ -e "$work/usr/share/graphics/$g" ] && cp -f "$BANNER" "$work/usr/share/graphics/$g"
+    done
+    ( cd "$work" && find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 ) > "$initrd.new" \
+        && mv -f "$initrd.new" "$initrd"
+    rm -rf "$work"
+    echo "sysible-installer-branding: rebranded $initrd" >&2
+    patched=$((patched + 1))
+done
+
+echo "sysible-installer-branding: rebranded $patched installer initrd(s)." >&2
+if [ "$patched" = 0 ]; then
+    echo "sysible-installer-branding: WARNING — no installer initrd carried the banner; the installer keeps Debian branding. Graphics found:" >&2
+    for initrd in $(find . -type f -name 'initrd.gz' 2>/dev/null); do
+        g="$(gzip -dc "$initrd" 2>/dev/null | cpio -t --quiet 2>/dev/null | grep -iE 'graphics|logo|\.png' | head)"
+        [ -n "$g" ] && { echo "   --- $initrd ---" >&2; echo "$g" >&2; }
+    done
+fi
+exit 0
