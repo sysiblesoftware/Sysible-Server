@@ -1,0 +1,21 @@
+{
+  "rootDir": "/var/lib/aptly",
+  "architectures": ["amd64", "arm64"],
+  "gpgProvider": "gpg",
+  "FileSystemPublishEndpoints": {
+    "local": {
+      "rootDir": "/srv/repo.sysible.com/apt",
+      "linkMethod": "copy"
+    }
+  },
+  "S3PublishEndpoints": {
+    "sysible": {
+      "region": "auto",
+      "bucket": "sysible-apt",
+      "endpoint": "__R2_ENDPOINT__",
+      "prefix": "apt",
+      "acl": "none",
+      "forceVirtualHostedStyle": false
+    }
+  }
+}

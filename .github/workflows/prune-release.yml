@@ -1,0 +1,35 @@
+name: Prune release assets
+
+# Remove stale/orphaned assets from a release without rebuilding the ISO.
+# The v0.1.0 release accumulated plain-named checksum files (SHA256SUMS,
+# SHA256SUMS.parts, REASSEMBLE.md) from the first build, before those files were
+# arch-suffixed (SHA256SUMS.amd64 / .arm64). They now list an outdated hash and
+# would fail verification, so they are pruned here.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to prune'
+        type: string
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete orphaned plain-named assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          for asset in SHA256SUMS SHA256SUMS.parts REASSEMBLE.md; do
+            echo "== deleting $asset =="
+            gh release delete-asset "$TAG" "$asset" -y -R "$REPO" || echo "  (absent, skipped)"
+          done
+          echo "== remaining assets =="
+          gh release view "$TAG" -R "$REPO" --json assets --jq '.assets[].name'

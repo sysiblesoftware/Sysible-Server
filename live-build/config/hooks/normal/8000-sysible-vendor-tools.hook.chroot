@@ -1,0 +1,203 @@
+#!/bin/sh
+# Install the non-Debian tools that make Sysible "everything on first boot":
+# the apt-based vendor tools (via the repos sysible-release configured) and the
+# GitHub-release binaries that have no apt repo. Runs in the chroot with network.
+set -e
+export DEBIAN_FRONTEND=noninteractive
+echo "== Sysible: installing vendor tools =="
+
+# All network fetches use bounded timeouts + retries so a stalled connection
+# fails fast (and retries) instead of hanging the whole ISO build indefinitely.
+CURL="curl -fsSL --connect-timeout 20 --max-time 600 --retry 3 --retry-delay 3"
+
+# Verify a downloaded artifact against the checksum its upstream publishes for
+# that exact release. FAIL CLOSED on a mismatch (the artifact was tampered with
+# in transit or at the CDN). If the checksum file itself can't be fetched, WARN
+# and continue — that's an availability hiccup, and TLS already protected the
+# download. Usage: verify_sha256 <file> <checksum_url> [<filename_in_sumfile>]
+#   - with a filename: match that line in a multi-entry SHA256SUMS file
+#   - without: take the first 64-hex token (single-hash files, e.g. helm)
+verify_sha256() {
+    _f="$1"; _url="$2"; _name="$3"
+    _sums=$($CURL "$_url" 2>/dev/null) || { echo "   WARN: checksum $_url unfetchable — skipping integrity check for $_f"; return 0; }
+    if [ -n "$_name" ]; then
+        _want=$(printf '%s\n' "$_sums" | grep -E "[[:space:]]\*?${_name}\$" | grep -oE '^[0-9a-fA-F]{64}' | head -1)
+    else
+        _want=$(printf '%s\n' "$_sums" | grep -oE '[0-9a-fA-F]{64}' | head -1)
+    fi
+    [ -n "$_want" ] || { echo "   WARN: no checksum for ${_name:-$_f} in $_url — skipping"; return 0; }
+    _got=$(sha256sum "$_f" | awk '{print $1}')
+    if [ "$_got" = "$_want" ]; then
+        echo "   sha256 OK: $_got"
+    else
+        echo "FATAL: checksum mismatch for $_f (got $_got, want $_want) — refusing to install" >&2
+        exit 1
+    fi
+}
+
+# Architecture-aware naming for the direct-download tools. dpkg's arch name
+# (amd64/arm64) is what helm, opentofu, k9s and sops use; eza uses the GNU
+# machine name (x86_64/aarch64).
+ARCH=$(dpkg --print-architecture)          # amd64 | arm64
+case "$ARCH" in
+    amd64) GNU_ARCH=x86_64 ;;
+    arm64) GNU_ARCH=aarch64 ;;
+    *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+esac
+echo "-- building for $ARCH ($GNU_ARCH) --"
+
+# The live-build chroot can come up with an unpopulated CA trust store — every
+# HTTPS then fails with "unable to get local issuer certificate", which kills the
+# key fetch AND the vendor apt repos. Rebuild it from the shipped roots (and any
+# operator CA dropped into the chroot for inspected networks) before any HTTPS.
+echo "-- rebuilding chroot CA trust store --"
+apt-get install -y --reinstall ca-certificates >/dev/null 2>&1 \
+    || apt-get install -y ca-certificates >/dev/null 2>&1 || true
+update-ca-certificates --fresh >/dev/null 2>&1 || update-ca-certificates || true
+certs=$(grep -c 'BEGIN CERTIFICATE' /etc/ssl/certs/ca-certificates.crt 2>/dev/null || echo 0)
+echo "   trusted roots: $certs"
+if ! curl -fsS --connect-timeout 20 --max-time 60 -o /dev/null https://download.docker.com/linux/debian/gpg; then
+    echo "FATAL: HTTPS still fails to verify inside the chroot after rebuilding the"
+    echo "       CA store. The build network is intercepting TLS with a private CA."
+    echo "       Build on a clean network (the GitHub Actions runner) or drop the"
+    echo "       intercepting CA into live-build/config/extra-ca/ so it is trusted."
+    exit 1
+fi
+
+# Fetch the vendor signing keys into /usr/share/keyrings (matches the .sources
+# that sysible-release installed). Ships with sysible-release.
+if [ -x /usr/share/sysible/scripts/fetch-third-party-keyrings.sh ]; then
+    /usr/share/sysible/scripts/fetch-third-party-keyrings.sh
+fi
+apt-get update
+
+# apt-installable vendor tools (docker-ce pulls cli/containerd as deps).
+# helm and tofu are NOT here — their apt repos misbehave in a fresh chroot
+# (baltocdn.com serves an incomplete TLS chain; packages.opentofu.org needs a
+# second Cloudsmith signing key) — so both are installed from official binaries
+# below instead.
+apt-get install -y --no-install-recommends \
+    docker-ce docker-compose-plugin docker-buildx-plugin \
+    kubectl \
+    google-cloud-cli azure-cli
+
+# helm: official binary (get.helm.sh is Google-hosted, complete chain). Required.
+echo "== helm (official binary) =="
+helm_ver=$($CURL https://api.github.com/repos/helm/helm/releases/latest \
+    | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE 'v[0-9.]+' | head -1)
+[ -n "$helm_ver" ] || helm_ver=v3.16.3
+helm_tgz="https://get.helm.sh/helm-${helm_ver}-linux-${ARCH}.tar.gz"
+$CURL "$helm_tgz" -o /tmp/helm.tgz
+verify_sha256 /tmp/helm.tgz "${helm_tgz}.sha256sum"
+tar xz -C /tmp -f /tmp/helm.tgz "linux-${ARCH}/helm"
+install -m0755 "/tmp/linux-${ARCH}/helm" /usr/local/bin/helm
+helm version --short || true
+
+# opentofu: official GitHub-release binary. Required.
+echo "== opentofu (official binary) =="
+tofu_ver=$($CURL https://api.github.com/repos/opentofu/opentofu/releases/latest \
+    | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+[ -n "$tofu_ver" ] || tofu_ver=1.8.5
+tofu_base="https://github.com/opentofu/opentofu/releases/download/v${tofu_ver}"
+$CURL "${tofu_base}/tofu_${tofu_ver}_linux_${ARCH}.tar.gz" -o /tmp/tofu.tgz
+verify_sha256 /tmp/tofu.tgz "${tofu_base}/tofu_${tofu_ver}_SHA256SUMS" "tofu_${tofu_ver}_linux_${ARCH}.tar.gz"
+tar xz -C /usr/local/bin -f /tmp/tofu.tgz tofu
+chmod 0755 /usr/local/bin/tofu
+tofu version || true
+
+# GitHub-release binaries (no apt repo): k9s, eza, sops. Best-effort — a hiccup
+# fetching one must not fail the whole ISO.
+echo "== GitHub-release binaries =="
+# k9s (best-effort): download, verify against the release checksums, then extract.
+# On a checksum mismatch we do NOT install the unverified binary, but we also
+# don't fail the ISO (k9s is optional) — we just skip it with a loud note.
+if $CURL "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_${ARCH}.tar.gz" -o /tmp/k9s.tgz 2>/dev/null; then
+    k9s_sum=$($CURL "https://github.com/derailed/k9s/releases/latest/download/checksums.sha256" 2>/dev/null \
+        | grep -E "[[:space:]]\*?k9s_Linux_${ARCH}\.tar\.gz\$" | grep -oE '^[0-9a-fA-F]{64}' | head -1)
+    if [ -z "$k9s_sum" ] || [ "$(sha256sum /tmp/k9s.tgz | awk '{print $1}')" = "$k9s_sum" ]; then
+        tar xz -C /usr/local/bin -f /tmp/k9s.tgz k9s 2>/dev/null && echo "k9s ok" || echo "k9s skipped (extract)"
+    else
+        echo "k9s SKIPPED — checksum mismatch, not installing unverified binary"
+    fi
+else
+    echo "k9s skipped (download)"
+fi
+( $CURL "https://github.com/eza-community/eza/releases/latest/download/eza_${GNU_ARCH}-unknown-linux-gnu.tar.gz" \
+    | tar xz -C /usr/local/bin ) 2>/dev/null && echo "eza ok" || echo "eza skipped"
+sops_url=$($CURL https://api.github.com/repos/getsops/sops/releases/latest \
+    | grep -oE "https://[^\"]*linux\.${ARCH}" | head -1)
+if [ -n "$sops_url" ] && $CURL "$sops_url" -o /usr/local/bin/sops; then
+    chmod +x /usr/local/bin/sops; echo "sops ok"
+else
+    echo "sops skipped"
+fi
+
+# PowerShell — Microsoft's official .deb from the PowerShell GitHub releases,
+# which ships BOTH amd64 and arm64 (the Debian prod apt feed is amd64-only, so it
+# would leave arm64 systems without it). apt resolves its runtime deps (libicu,
+# less, locales). Best-effort so a download hiccup can't fail the ISO.
+echo "== powershell (official .deb) =="
+pwsh_ver=$($CURL https://api.github.com/repos/PowerShell/PowerShell/releases/latest 2>/dev/null \
+    | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE 'v[0-9.]+' | head -1)
+[ -n "$pwsh_ver" ] || pwsh_ver=v7.4.6
+pwsh_num=${pwsh_ver#v}
+pwsh_url="https://github.com/PowerShell/PowerShell/releases/download/${pwsh_ver}/powershell_${pwsh_num}-1.deb_${ARCH}.deb"
+if $CURL "$pwsh_url" -o /tmp/powershell.deb 2>/dev/null; then
+    apt-get install -y --no-install-recommends /tmp/powershell.deb \
+        && echo "powershell ok ($pwsh_ver $ARCH)" \
+        || echo "WARNING: powershell install failed for $ARCH — skipping"
+    rm -f /tmp/powershell.deb
+else
+    echo "WARNING: powershell download failed ($pwsh_url) — skipping"
+fi
+
+# Ollama runtime (NOT a model) — the local LLM server behind `sysible ai` and the
+# AI companion terminal. Bundle the engine so the feature works offline out of the
+# box; users pull whatever model they want (`ollama pull …` / `sysible ai --pull`).
+# Best-effort on a download hiccup (it's a large asset), but FAIL CLOSED on a
+# checksum mismatch. We prune the GPU runner libs (cuda*/rocm*) to keep the ISO
+# lean — CPU inference works everywhere; GPU users can reinstall upstream Ollama.
+echo "== ollama runtime (engine only, no model) =="
+oll_tag=$($CURL https://api.github.com/repos/ollama/ollama/releases/latest 2>/dev/null \
+    | grep -oE '"tag_name": *"[^"]+"' | grep -oE 'v[0-9][0-9.]*' | head -1)
+[ -n "$oll_tag" ] || oll_tag=v0.5.7
+oll_base="https://github.com/ollama/ollama/releases/download/${oll_tag}"
+if $CURL "${oll_base}/ollama-linux-${ARCH}.tgz" -o /tmp/ollama.tgz 2>/dev/null; then
+    verify_sha256 /tmp/ollama.tgz "${oll_base}/sha256sum.txt" "ollama-linux-${ARCH}.tgz"
+    tar -C /usr/local -xzf /tmp/ollama.tgz
+    rm -f /tmp/ollama.tgz
+    # Trim GPU runners to keep the image lean (kept: CPU runner).
+    rm -rf /usr/local/lib/ollama/cuda* /usr/local/lib/ollama/rocm* 2>/dev/null || true
+    # Dedicated service account, like upstream's installer.
+    groupadd -f ollama 2>/dev/null || true
+    id ollama >/dev/null 2>&1 || useradd -r -g ollama -s /usr/sbin/nologin \
+        -d /usr/share/ollama -m ollama 2>/dev/null || true
+    usermod -aG ollama sysible 2>/dev/null || true
+    cat > /etc/systemd/system/ollama.service <<'UNIT'
+[Unit]
+Description=Ollama local model server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ollama serve
+User=ollama
+Group=ollama
+Restart=always
+RestartSec=3
+Environment=HOME=/usr/share/ollama
+Environment=OLLAMA_MODELS=/usr/share/ollama/.ollama/models
+# Local only — the model server never listens off-box.
+Environment=OLLAMA_HOST=127.0.0.1:11434
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl enable ollama.service 2>/dev/null || true
+    /usr/local/bin/ollama --version 2>/dev/null || true
+    echo "ollama ${oll_tag} bundled (engine only; pull a model with: sysible ai --pull)"
+else
+    echo "ollama skipped (download) — sysible ai will guide install on first use"
+fi
+
+echo "== Sysible vendor tools done =="

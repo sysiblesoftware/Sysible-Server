@@ -1,0 +1,138 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]        # -> sysible-dev
+    tags: ['v*']            # -> sysible-stable
+
+# Least privilege: this job only reads the repo and pushes to R2 (not to GitHub),
+# so the GITHUB_TOKEN needs no write scope.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Never run on forks; only publish from the canonical repo.
+    if: github.repository == 'sysiblesoftware/Sysible-Linux'
+    env:
+      # aptly publishes to a local dir; a later step `aws s3 sync`s it to R2.
+      # (aptly's native S3 publish emits an x-amz-acl header R2 rejects with 501.)
+      SYSIBLE_APTLY_ENDPOINT: "filesystem:local:"
+      SYSIBLE_GPG_KEY: maintainers@sysible.com
+      # Cloudflare R2 (S3-compatible). AWS_* are your R2 API-token credentials;
+      # region is always "auto" for R2. R2_ACCOUNT_ID is a repo *variable* (not a
+      # secret) — your Cloudflare account id — used to build the S3 endpoint host.
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # R2_ENDPOINT is resolved from R2_ACCOUNT_ID in the "Resolve R2 endpoint"
+      # step below — it tolerates either a bare account id or a full endpoint URL.
+      STATE_URI: s3://sysible-apt/_aptly-db
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight — required secrets
+        run: |
+          if [ -z "${{ secrets.SYSIBLE_GPG_PRIVATE_KEY }}" ] || [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ vars.R2_ACCOUNT_ID }}" ]; then
+            echo "::error::Set secrets SYSIBLE_GPG_PRIVATE_KEY + AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (your Cloudflare R2 token) and the repo variable R2_ACCOUNT_ID before publishing."
+            exit 1
+          fi
+
+      - name: Resolve R2 endpoint
+        run: |
+          # Accept either the bare Cloudflare account id or a full endpoint URL
+          # in the R2_ACCOUNT_ID variable, and normalise to the S3 endpoint host.
+          acct="${{ vars.R2_ACCOUNT_ID }}"
+          acct="${acct#http://}"; acct="${acct#https://}"
+          acct="${acct%%.r2.cloudflarestorage.com*}"
+          acct="${acct%%/*}"
+          echo "R2_ENDPOINT=https://${acct}.r2.cloudflarestorage.com" >> "$GITHUB_ENV"
+          echo "Using R2 endpoint host: ${acct}.r2.cloudflarestorage.com"
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper dh-python python3-all python3-setuptools \
+            pybuild-plugin-pyproject aptly ca-certificates gnupg curl unzip
+          # awscli was dropped from Ubuntu 24.04's archive; install AWS CLI v2
+          # from AWS directly (it speaks the S3 API we use against Cloudflare R2).
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          sudo /tmp/aws/install --update
+          aws --version
+
+      - name: Import signing key
+        env:
+          SYSIBLE_GPG_PRIVATE_KEY: ${{ secrets.SYSIBLE_GPG_PRIVATE_KEY }}
+        run: |
+          # Pass the key via env and printf (not inline expression interpolation
+          # into the shell text) so its bytes never land in the command line/logs.
+          printf '%s' "$SYSIBLE_GPG_PRIVATE_KEY" | gpg --batch --import
+          # The secret must contain the exact key we sign with, and whose public
+          # half is the committed keyring — otherwise clients can't verify.
+          if ! gpg --list-secret-keys "$SYSIBLE_GPG_KEY" >/dev/null 2>&1; then
+            echo "::error::SYSIBLE_GPG_PRIVATE_KEY does not contain $SYSIBLE_GPG_KEY. Update the secret with: gpg --armor --export-secret-keys maintainers@sysible.com"
+            exit 1
+          fi
+
+      - name: aptly config
+        run: |
+          # Repoint the DB rootDir (/var/lib/aptly needs root) and the filesystem
+          # publish dir at writable paths under $HOME. The __R2_ENDPOINT__ sub is
+          # harmless (the S3 publish endpoint is unused now — we sync via awscli).
+          sed -e "s#__R2_ENDPOINT__#${R2_ENDPOINT#https://}#" \
+              -e "s#/var/lib/aptly#$HOME/.aptly#" \
+              -e "s#/srv/repo.sysible.com/apt#$HOME/aptly-public#" \
+              scripts/aptly.conf.sample > "$HOME/.aptly.conf"
+
+      - name: Restore aptly database
+        run: aws s3 sync --endpoint-url "$R2_ENDPOINT" "$STATE_URI" "$HOME/.aptly" || echo "no prior aptly state (first run)"
+
+      - name: Build all packages
+        run: ./scripts/build-all.sh
+
+      - name: Select suite
+        id: suite
+        run: |
+          if [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+            echo "name=sysible-stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=sysible-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish
+        run: ./scripts/publish-repo.sh ${{ steps.suite.outputs.name }}
+
+      - name: Sync repo to R2
+        run: |
+          # Upload the aptly-generated tree to the bucket's apt/ prefix. aws s3
+          # sends no x-amz-acl header, so R2 accepts it (unlike aptly's S3
+          # publish). NO --delete: each run publishes only ONE suite (dev on
+          # push, stable on tag), so mirroring would wipe the other suite the
+          # VMs may be reading. Each suite overwrites its own dists/ in place;
+          # orphaned pool files are harmless.
+          #
+          # Cache-Control is the crux of correctness behind Cloudflare's CDN:
+          #   * pool/  — content-addressed .deb payloads that never change once
+          #     published, so cache them hard (a year, immutable).
+          #   * dists/ — the Release / Packages / *.bz2 index that apt fetches
+          #     first and validates by size+hash. If the CDN serves a STALE
+          #     index against a FRESH Release, apt fails ("unexpected size").
+          #     It must never be cached: send no-cache and re-upload every run
+          #     so the edge always revalidates against the origin.
+          #
+          # Pass 1: pool/ (the .deb payloads) — long-lived, immutable.
+          if [ -d "$HOME/aptly-public/pool" ]; then
+            aws s3 sync "$HOME/aptly-public/pool/" "s3://sysible-apt/apt/pool/" \
+              --endpoint-url "$R2_ENDPOINT" --no-progress \
+              --cache-control "public, max-age=31536000, immutable"
+          fi
+          # Pass 2: dists/ (the index metadata) — never cache, always re-upload.
+          aws s3 cp "$HOME/aptly-public/dists/" "s3://sysible-apt/apt/dists/" \
+            --recursive --endpoint-url "$R2_ENDPOINT" --no-progress \
+            --cache-control "no-cache, max-age=0, must-revalidate"
+
+      - name: Persist aptly database
+        run: aws s3 sync --endpoint-url "$R2_ENDPOINT" "$HOME/.aptly" "$STATE_URI"

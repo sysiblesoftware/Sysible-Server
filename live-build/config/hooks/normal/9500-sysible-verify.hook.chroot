@@ -1,0 +1,54 @@
+#!/bin/sh
+# Build-time guarantee. Runs after packages are installed and FAILS the whole ISO
+# build if the headless image didn't come out right: the target bootloader must be
+# installable, and the Sysible boot-menu branding must match the canonical mark.
+set -e
+
+fail() { echo "SYSIBLE-VERIFY FATAL: $1" >&2; exit 1; }
+
+# 1) The target bootloader is installable offline. grub must be INSTALLED in the
+# live chroot so its .deb is in the ISO pool and already present in the unpacked
+# target; otherwise the Debian Installer cannot make the installed system bootable
+# on a machine with no network. Assert both the arch grub-efi package and
+# update-grub are actually here.
+ARCH=$(dpkg --print-architecture 2>/dev/null || echo unknown)
+case "$ARCH" in
+    arm64) GRUB_PKG=grub-efi-arm64 ;;
+    amd64) GRUB_PKG=grub-efi-amd64 ;;
+    *)     GRUB_PKG=grub-efi-amd64 ;;
+esac
+dpkg-query -W -f='${Status}' "$GRUB_PKG" 2>/dev/null | grep -q 'install ok installed' \
+    || fail "$GRUB_PKG not installed — the installer cannot make the target bootable offline"
+[ -x /usr/sbin/update-grub ] || fail "/usr/sbin/update-grub missing — grub-common not installed"
+echo "sysible-verify: OK — $GRUB_PKG installed, update-grub present (target install can bootload)."
+
+# 2) Boot-menu branding integrity. The Sysible GRUB boot-menu logo/background are
+# rendered from ONE canonical mark (branding/logo/sysible-mark.svg) and their
+# sha256 recorded in a manifest shipped into the image. Assert the on-disk files
+# still match — this is what stops the GRUB boot logo from silently drifting back
+# to old art. Env-independent: just sha256 of the committed bytes.
+BMAN=/usr/share/sysible/branding.manifest
+[ -f "$BMAN" ] || fail "branding manifest missing ($BMAN)"
+PREFIX=live-build/config/includes.chroot
+checked=0
+while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    sha=${line%% *}
+    rel=${line#* }
+    rel=${rel# }
+    # Only the assets that actually land in the installed root (under
+    # includes.chroot); ISO-only splashes and repo README badges are skipped here
+    # and covered by scripts/verify-branding.sh in CI instead.
+    case "$rel" in
+        "$PREFIX"/*) img="/${rel#"$PREFIX"/}" ;;
+        *) continue ;;
+    esac
+    [ -f "$img" ] || fail "branded asset missing from image: $img"
+    act=$(sha256sum "$img" 2>/dev/null | awk '{print $1}')
+    [ "$act" = "$sha" ] || fail "branded asset drifted from the canonical mark: $img"
+    checked=$((checked + 1))
+done < "$BMAN"
+[ "$checked" -gt 0 ] || fail "branding manifest matched no in-image assets"
+echo "sysible-verify: OK — $checked branded assets match the canonical mark (incl. GRUB boot logo)."
+
+echo "sysible-verify: OK — headless image verified."

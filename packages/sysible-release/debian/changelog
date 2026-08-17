@@ -1,0 +1,48 @@
+sysible-release (0.1.7) sysible; urgency=medium
+
+  * pin k8s signing key; pin vendor apt repos below Debian to prevent base-package shadowing
+
+ -- Sysible <maintainers@sysible.com>  Thu, 13 Aug 2026 13:07:47 +0000
+
+sysible-release (0.1.6) sysible; urgency=medium
+
+  * accept both gh apt primary keys (GitHub CDN serves two keyring variants mid-rotation)
+
+ -- Sysible <maintainers@sysible.com>  Wed, 12 Aug 2026 21:28:21 +0000
+
+sysible-release (0.1.5) sysible; urgency=medium
+
+  * verify only primary key fingerprints (subkeys ride along) so gh keyring's signing subkey no longer fails the pin
+
+ -- Sysible <maintainers@sysible.com>  Wed, 12 Aug 2026 21:16:38 +0000
+
+sysible-release (0.1.4) sysible; urgency=medium
+
+  * restore canonical github-cli apt key pin (accept both current + rotation key) so ISO builds don't fail on the real gh keyring
+
+ -- Sysible <maintainers@sysible.com>  Wed, 12 Aug 2026 21:03:21 +0000
+
+sysible-release (0.1.3) sysible; urgency=medium
+
+  * update pinned github-cli apt key fingerprint (GitHub rotated it) — unblocks ISO build
+
+ -- Sysible <maintainers@sysible.com>  Wed, 12 Aug 2026 20:51:00 +0000
+
+sysible-release (0.1.2) sysible; urgency=medium
+
+  * enable Sysible apt repo (repo.sysible.com, R2) now the archive is live
+
+ -- Sysible <maintainers@sysible.com>  Wed, 12 Aug 2026 15:32:56 +0000
+
+sysible-release (0.1.1) sysible; urgency=medium
+
+  * add GitHub CLI (gh) apt source + pinned keyring
+
+ -- Sysible <maintainers@sysible.com>  Wed, 12 Aug 2026 13:14:25 +0000
+
+sysible-release (0.1.0) sysible; urgency=medium
+
+  * Initial release: Sysible archive keyring + repo, upstream vendor repo configs,
+    and the vendor-keyring fetch script.
+
+ -- Sysible <maintainers@sysible.com>  Fri, 07 Aug 2026 00:00:00 +0000

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sysible-cli"
+version = "0.2.0"
+description = "The `sysible` command for Sysible Workstation — system verification and platform tooling."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Sysible" }]
+dependencies = []
+
+[project.scripts]
+sysible = "sysible_cli.cli:main"
+# Aliases so the tool is on PATH under the names people reach for.
+sysible-cli = "sysible_cli.cli:main"
+sysible_cli = "sysible_cli.cli:main"
+
+[tool.setuptools]
+packages = ["sysible_cli"]

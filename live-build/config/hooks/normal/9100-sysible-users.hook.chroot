@@ -1,0 +1,24 @@
+#!/bin/sh
+# Sysible Server default identities: user 'sysible' / password 'sysible', and
+# root / 'sysible'. CHANGE THESE before any public or production build.
+set -e
+DEFUSER=sysible
+DEFPASS=sysible
+
+if ! id "$DEFUSER" >/dev/null 2>&1; then
+    useradd -m -s /bin/bash -c "Sysible" "$DEFUSER"
+fi
+for g in sudo kvm libvirt docker netdev; do
+    groupadd -f "$g" 2>/dev/null || true
+    usermod -aG "$g" "$DEFUSER" 2>/dev/null || true
+done
+printf '%s:%s\n' "$DEFUSER" "$DEFPASS" | chpasswd
+printf 'root:%s\n'  "$DEFPASS"          | chpasswd
+
+# Brand the hostname.
+echo sysible > /etc/hostname
+if grep -q '^127\.0\.1\.1' /etc/hosts 2>/dev/null; then
+    sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tsysible/' /etc/hosts
+else
+    printf '127.0.1.1\tsysible\n' >> /etc/hosts
+fi

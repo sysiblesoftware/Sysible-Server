@@ -1,0 +1,17 @@
+Source: sysible-artwork
+Section: x11
+Priority: optional
+Maintainer: Sysible <maintainers@sysible.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://sysible.com
+Rules-Requires-Root: no
+
+Package: sysible-artwork
+Architecture: all
+Depends: ${misc:Depends}
+Description: Sysible Workstation wallpapers and branding
+ The finalized Sysible Workstation wallpaper set (Mesh, Fleet, Contour, and Aurora in
+ dark and light, plus the SysTerm-centered Beacon and Hub) at 3840x2160, installed
+ under /usr/share/backgrounds/sysible and registered with the GNOME background
+ chooser. sysible-desktop-gnome sets Mesh (Dark) as the default.

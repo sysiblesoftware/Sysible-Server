@@ -1,0 +1,19 @@
+Source: sysible-cli
+Section: admin
+Priority: optional
+Maintainer: Sysible <maintainers@sysible.com>
+Build-Depends: debhelper-compat (= 13), dh-python, python3-all, python3-setuptools
+Standards-Version: 4.6.2
+Homepage: https://sysible.com
+Rules-Requires-Root: no
+
+Package: sysible-cli
+Architecture: all
+Depends: ${python3:Depends}, ${misc:Depends}
+Description: Sysible Workstation command-line tool (`sysible`)
+ The `sysible` command for Sysible Workstation. Ships `sysible verify`, which validates
+ that the box is ready for engineering work — network, DNS, SSH, container runtime,
+ Ansible, Terraform/OpenTofu, Kubernetes tooling, virtualization, security posture,
+ Sysible Controller reachability, and pending updates — with a human-readable report
+ or `--json` for automation, and per-area flags (--network/--containers/
+ --virtualization/--security).

@@ -1,0 +1,4 @@
+#!/usr/bin/make -f
+# Metapackage: no build, no install payload — dh does everything from control.
+%:
+	dh $@

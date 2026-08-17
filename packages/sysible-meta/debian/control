@@ -1,0 +1,81 @@
+Source: sysible-meta
+Section: metapackages
+Priority: optional
+Maintainer: Sysible <maintainers@sysible.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://sysible.com
+Rules-Requires-Root: no
+
+Package: sysible-server
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends},
+ sysible-release,
+ sysible-cli,
+ sysible-branding,
+ sysible-artwork,
+# --- system administration ---
+ sudo, openssh-server, openssh-client, curl, wget, git, vim, nano, tmux,
+# libpam-pwquality enforces the password-quality floor (policy shipped in
+# /etc/security/pwquality.conf.d) — a hard dep so it can't be silently dropped.
+ libpam-pwquality,
+ screen, tree, less, bash-completion, rsync, lsof, strace, procps, psmisc,
+# --- networking ---
+ net-tools, iproute2, iputils-ping, dnsutils, mtr-tiny, traceroute, tcpdump,
+ nmap, netcat-openbsd, iperf3, ethtool,
+# --- archives ---
+ unzip, zip, bzip2, gzip, xz-utils, p7zip-full,
+# --- troubleshooting ---
+ htop, iotop, sysstat, ncdu, smartmontools, lm-sensors,
+# --- modern CLI ---
+ jq, ripgrep, fd-find, bat, fzf,
+# --- languages / dev base ---
+ python3, python3-pip, python3-venv, pipx, build-essential,
+# --- automation & IaC (from Debian where present; the rest via sysible-release) ---
+ ansible, ansible-lint,
+# --- containers ---
+ podman, buildah, skopeo,
+Recommends:
+# Heavier pieces — installed by default, removable with --no-install-recommends.
+# This is the Sysible Workstation toolset MINUS the GUI: no GNOME/Calamares, no
+# desktop apps (VSCodium, Wireshark, virt-manager, LibreOffice, CherryTree,
+# SysTerm), no open-vm-tools-desktop — only the headless server pieces remain.
+# VM guest integration (folder sharing etc. sans the desktop bits).
+ open-vm-tools,
+# languages (bigger toolchains)
+ golang, rustc, cargo, nodejs, npm, default-jdk, maven, gradle,
+# databases (clients)
+ postgresql-client, default-mysql-client, sqlite3, redis-tools,
+# security
+ openssl, gnupg, fail2ban, auditd, apparmor, lynis,
+# monitoring / CLI (contrib/backports on some suites — Recommends keeps them soft)
+ btop, atop, iftop,
+# eza is Debian 13+; soft-depend so a bookworm build doesn't fail
+ eza,
+# headless virtualization host (the GUI virt-manager/virt-viewer are dropped)
+ libvirt-daemon-system, qemu-system, qemu-utils,
+# These come from third-party repos wired up by sysible-release; Recommends so a
+# missing upstream repo never blocks the whole install:
+ docker-ce, docker-compose-plugin, containerd.io,
+ kubectl, helm, k9s,
+ opentofu,
+ awscli, sops, age,
+ gh,
+Suggests:
+ azure-cli, google-cloud-cli,
+ sysible-controller, sysible-agent,
+Description: Sysible Server — headless engineering server (all-in-one)
+ Turns a Debian base into the Sysible Server: the tools a Linux/DevOps/SRE/platform
+ engineer reaches for, installed and ready on first boot, so there is no half-hour
+ of apt after every fresh install — the same toolset as Sysible Workstation but
+ headless (no GNOME desktop, no Calamares, no GUI applications).
+ .
+ Depends carries the must-haves (shell, networking, containers via podman, the
+ modern CLI set, Python, Ansible, the Sysible CLI). Recommends carries the heavier
+ pieces (Docker CE, Kubernetes, OpenTofu, cloud CLIs, headless libvirt/QEMU, the
+ language toolchains) so a lean build can drop them with --no-install-recommends.
+ .
+ Tools that are not in Debian (Docker CE, kubectl/helm, OpenTofu, cloud CLIs) are
+ pulled from their upstream apt repositories, which sysible-release configures — so
+ `apt install` Just Works without vendoring their binaries.

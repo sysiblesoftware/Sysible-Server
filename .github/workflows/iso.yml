@@ -1,16 +1,11 @@
 name: ISO
 
-# Build the Sysible Server ISO on GitHub's runners (network not HTTPS-inspected,
-# so the vendor tools — Docker, kubectl, Helm, OpenTofu — bake in). Download the
-# finished .iso from the run's Artifacts, or — when dispatched with release=true —
-# from the published GitHub Release.
-#
-# Releases go through workflow_dispatch (release=true, one dispatch per arch to a
-# shared tag). There is deliberately NO `push: tags` trigger: it would fire a
-# second amd64 build on tag creation that races the dispatched one to upload the
-# same asset — the cause of the corrupt/oddly-named download in the first cut.
+# Build the COMPLETE Sysible Server ISO on GitHub's runners, whose network is not
+# HTTPS-inspected, so every vendor tool (Docker, Kubernetes, Terraform, cloud
+# CLIs, VS Code) bakes in. Download the finished .iso from the run's Artifacts,
+# or — on a version tag (v*) — from the published GitHub Release.
 on:
-  workflow_dispatch:
+  workflow_dispatch:          # run it manually from the Actions tab
     inputs:
       arch:
         description: 'Target architecture'
@@ -18,19 +13,23 @@ on:
         options: [amd64, arm64]
         default: amd64
       release:
-        description: 'Publish a GitHub Release (ISO + checksums)'
+        description: 'Publish a GitHub Release (split ISO + checksums)'
         type: boolean
         default: false
       tag:
         description: 'Release tag to create/use (only when release=true)'
         type: string
-        default: v1.0.1
+        default: v0.1.0
+  push:
+    tags: ['v*']              # and on release tags (amd64)
 
 permissions:
-  contents: write
+  contents: write             # needed to create the Release on a tag
 
 jobs:
   iso:
+    # arm64 builds run on a native ARM runner (free for public repos); amd64 and
+    # tag pushes use the standard x86 runner.
     runs-on: ${{ (github.event.inputs.arch == 'arm64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 120
     container:
@@ -45,6 +44,13 @@ jobs:
           apt-get install -y --no-install-recommends git ca-certificates
 
       - uses: actions/checkout@v4
+
+      # Fail FAST (seconds, not 35 minutes) if any logo asset drifted from the
+      # canonical mark — e.g. the mark was changed but the boot/GRUB/Plymouth PNGs
+      # weren't regenerated. Pure sha256 check, no rendering, so it needs no extra
+      # deps and can't false-positive on toolchain differences.
+      - name: Verify branding is in sync
+        run: sh scripts/verify-branding.sh
 
       - name: Build the ISO
         run: |
@@ -63,63 +69,65 @@ jobs:
           compression-level: 0
 
       # ---- release-only steps (tag push, or a dispatch with release=true) --
-      # Ship the whole ISO directly when it fits under GitHub's 2 GiB per-asset
-      # limit (the common case for this headless image, ~1.2 GB) — a plain
-      # bootable *.iso that tools accept as-is. Only split into numbered *.part
-      # files when the image actually exceeds the limit.
-      - name: Package ISO for release
+      - name: Split ISO for release
         if: startsWith(github.ref, 'refs/tags/') || inputs.release
         run: |
           set -e
           apt-get install -y --no-install-recommends coreutils
-          A="${SYSIBLE_ARCH:-amd64}"
+          A="${SYSIBLE_ARCH:-amd64}"     # arch-suffix shared-name files
           mkdir -p release
           ISO=$(ls live-build/*.iso | head -1)
           BASE=$(basename "$ISO")
-          SIZE=$(stat -c%s "$ISO")
-          LIMIT=2000000000                     # ~1.86 GiB, safely under GitHub's 2 GiB cap
           cd release
-          # Whole-ISO checksum, for verifying the .iso (or the reassembled image).
+          # Full-image checksum, for verifying AFTER reassembly.
           sha256sum -b "../$ISO" | sed "s| .*| *$BASE|" > "SHA256SUMS.$A"
-          if [ "$SIZE" -lt "$LIMIT" ]; then
-            echo "ISO is $SIZE bytes (< 2 GB) — publishing a single .iso, no split."
-            cp "../$ISO" "./$BASE"
-          else
-            echo "ISO is $SIZE bytes (>= 2 GB) — splitting into 1900 MiB parts."
-            split -b 1900M -d --additional-suffix=.part "../$ISO" "$BASE."
-            sha256sum -b "$BASE".*.part > "SHA256SUMS.$A.parts"
-            cat > "REASSEMBLE.$A.md" <<EOF
+          # GitHub release assets cap at 2 GiB, so split into 1900 MiB parts.
+          split -b 1900M -d --additional-suffix=.part "../$ISO" "$BASE."
+          # Per-part checksums, for verifying the downloads BEFORE reassembly.
+          sha256sum -b "$BASE".*.part > "SHA256SUMS.$A.parts"
+          cat > "REASSEMBLE.$A.md" <<EOF
           # Sysible Server ($A) — reassemble the ISO
 
-          Download every \`$BASE.*.part\`, plus \`SHA256SUMS.$A\` and
-          \`SHA256SUMS.$A.parts\` (and their \`.gpg\` signatures if present), into
-          one folder, then:
+          The ISO is ~3.4 GB, over GitHub's 2 GB per-file release limit, so it is
+          split into \`$BASE.*.part\` pieces.
+
+          Download every \`$BASE.*.part\`, plus \`SHA256SUMS.$A\`,
+          \`SHA256SUMS.$A.parts\` and their \`.gpg\` signatures, into one folder.
+
+          First verify AUTHENTICITY with the Sysible release key (fingerprint
+          published at https://sysible.com/security), then the checksums:
 
           \`\`\`sh
+          gpg --verify SHA256SUMS.$A.parts.gpg SHA256SUMS.$A.parts  # authenticity
           sha256sum -c SHA256SUMS.$A.parts     # verify the downloaded parts
           cat $BASE.*.part > $BASE             # reassemble
+          gpg --verify SHA256SUMS.$A.gpg SHA256SUMS.$A              # authenticity
           sha256sum -c SHA256SUMS.$A           # verify the whole ISO
           \`\`\`
 
-          Then write \`$BASE\` to a USB stick (\`dd\`, Etcher) and boot it. Sysible
-          Server boots to a console; SSH is enabled (hardened, no root login).
+          Then write \`$BASE\` to a USB stick (\`dd\`, Etcher, Rufus) and boot it.
+          The live session logs in automatically; the installer creates your own
+          account and password (no default login ships in the image).
           EOF
-          fi
           ls -lh
 
-      # Sign the checksum manifests IF the release key is configured. Best-effort:
-      # if SYSIBLE_GPG_PRIVATE_KEY isn't set on this repo yet, skip signing (the
-      # checksums still ship) rather than failing the release. Add the secret to
-      # publish signed releases.
-      - name: Sign the checksum manifests (if key present)
+      # Sign the checksum manifests with the Sysible release key so the download
+      # has an AUTHENTICITY anchor, not just an integrity check. Without this,
+      # anyone able to alter the release assets swaps the ISO AND the checksums
+      # together and `sha256sum -c` still passes. The `SHA256SUMS.*` glob in the
+      # publish step already picks up the resulting `.gpg` files.
+      # NOTE: ideally the release key is applied OFFLINE (hardware token) rather
+      # than injected into this privileged build container; this in-CI signing is
+      # the minimum bar. Fails closed if the key is absent.
+      - name: Sign the checksum manifests
         if: startsWith(github.ref, 'refs/tags/') || inputs.release
         env:
           SYSIBLE_GPG_PRIVATE_KEY: ${{ secrets.SYSIBLE_GPG_PRIVATE_KEY }}
         run: |
           set -e
           if [ -z "$SYSIBLE_GPG_PRIVATE_KEY" ]; then
-            echo "::warning::SYSIBLE_GPG_PRIVATE_KEY not set — publishing unsigned checksums. Add the secret to ship signed releases."
-            exit 0
+            echo "::error::SYSIBLE_GPG_PRIVATE_KEY is not set — a public release must ship signed checksums."
+            exit 1
           fi
           apt-get install -y --no-install-recommends gnupg
           GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
@@ -133,41 +141,74 @@ jobs:
           done
           gpgconf --kill all 2>/dev/null || true
           rm -rf "$GNUPGHOME"
+          ls -l
 
-      # SECURITY TODO: pin this action to a full commit SHA before public release.
+      # SECURITY TODO: pin this third-party action to a full commit SHA (it holds
+      # contents:write). It is left at the mutable @v2 tag only because the SHA
+      # must be resolved and reviewed on a trusted network — do that before the
+      # public release: `uses: softprops/action-gh-release@<40-char-sha>  # v2.x`.
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/') || inputs.release
         uses: softprops/action-gh-release@v2
         with:
+          # On a tag push, use that tag; on a dispatch, create/use inputs.tag
+          # at the checked-out commit (action creates the tag if it's new).
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
           name: Sysible Server ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
-          # A sub-2 GB build publishes release/*.iso (+ SHA256SUMS.<arch> and its
-          # .gpg). A larger build publishes release/*.part (+ .parts checksums and
-          # REASSEMBLE.<arch>.md). fail_on_unmatched_files is off because exactly
-          # one of the .iso / .part globs is empty on any given build.
           files: |
-            release/*.iso
             release/*.part
             release/SHA256SUMS.*
             release/REASSEMBLE.*.md
+          # A fixed, clean body. amd64 and arm64 publish to the same tag, so keep
+          # append_body off and don't auto-generate notes (that appended a
+          # duplicate changelog line on every publish).
           generate_release_notes: false
           append_body: false
           body: |
-            **Sysible Server 1.0.1 “Forge”** — a headless Debian-based server base.
+            **Sysible Server** — the headless engineering server.
 
-            No GUI — boots to a console. Ships the container, Kubernetes, IaC,
-            networking, observability and security tooling to run server software:
-            Docker CE, kubectl, Helm, OpenTofu, k9s, SOPS, podman/buildah/skopeo,
-            Ansible, nftables, fail2ban/auditd/AppArmor, and the modern CLI set.
-
-            SSH is enabled and hardened (no root login); password auth is left on
-            so a fresh box is reachable before keys are provisioned — switch to
-            key-only once your keys are in place.
+            A live Debian-stable image with the whole server toolchain baked in:
+            containers, Kubernetes, infrastructure-as-code, cloud CLIs, headless
+            libvirt/QEMU and the modern CLI set — installed via the text-mode Debian
+            Installer. No GNOME desktop, no GUI apps. The same toolset as Sysible
+            Workstation, minus the GUI. Includes the Sysible Controller CE installer.
 
             ### Downloads (amd64 & arm64)
-            Each architecture ships a single bootable `live-image-<arch>.hybrid.iso`
-            (this image fits under GitHub's 2 GB per-file limit). Verify it with
-            `sha256sum -c SHA256SUMS.<arch>` and the `.gpg` signature (key at
-            https://sysible.com/security), then write it to a USB stick (`dd`,
-            Etcher) or attach it to a VM. Boots to a console; SSH is enabled.
-          fail_on_unmatched_files: false
+            The ISO is ~3.4 GB, over GitHub's 2 GB per-file limit, so each build ships
+            as numbered `*.part` files. Download every `*.part` for your architecture
+            plus the two `SHA256SUMS.<arch>*` files, then reassemble:
+
+            ```sh
+            gpg --verify SHA256SUMS.<arch>.parts.gpg SHA256SUMS.<arch>.parts  # authenticity
+            sha256sum -c SHA256SUMS.<arch>.parts   # verify the parts
+            cat live-image-<arch>.hybrid.iso.*.part > live-image-<arch>.hybrid.iso
+            gpg --verify SHA256SUMS.<arch>.gpg SHA256SUMS.<arch>              # authenticity
+            sha256sum -c SHA256SUMS.<arch>          # verify the whole ISO
+            ```
+
+            Verify authenticity with the Sysible release key (fingerprint at
+            https://sysible.com/security) before trusting the checksums. See
+            `REASSEMBLE.<arch>.md` for exact commands. The live session logs in
+            automatically; the installer creates your own account — no default
+            login ships in the image.
+          fail_on_unmatched_files: true
+
+      # Poke the website so its download page updates to this release right away.
+      # Optional: set the WEBSITE_DISPATCH_TOKEN secret (a fine-grained PAT with
+      # "Contents: write" on sysiblesoftware/sysible-website) to enable it. If the
+      # secret is absent this is a no-op — the website's own 6-hourly sync still
+      # catches the new release.
+      - name: Notify website of new release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release
+        env:
+          WEBSITE_DISPATCH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "${WEBSITE_DISPATCH_TOKEN:-}" ]; then
+            echo "WEBSITE_DISPATCH_TOKEN not set — skipping. The website syncs itself every 6h."
+            exit 0
+          fi
+          curl -sSL --fail -X POST \
+            -H "Authorization: Bearer $WEBSITE_DISPATCH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/sysiblesoftware/sysible-website/dispatches \
+            -d '{"event_type":"iso-released"}'
