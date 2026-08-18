@@ -42,7 +42,7 @@ FG_LIGHT = (20, 29, 56)      # wordmark on light
 GREEN = (109, 219, 115)      # #6ddb73
 BLUE = (122, 162, 255)       # #7aa2ff
 FONT = os.path.join(ROOT, "branding/fonts/Sora.ttf")   # Sora (OFL), SES rebrand
-WORDMARK = "SYSIBLE LINUX"
+WORDMARK = "SYSIBLE SERVER"
 
 
 def _sora(size):
@@ -305,7 +305,14 @@ def grub_background(W, H):
 
 # ---------------------------------------------------------------- output map
 def build():
-    """Return {relpath: PIL.Image or ('tga', PIL.Image)} for every derived asset."""
+    """Return {relpath: PIL.Image or ('tga', PIL.Image)} for every derived asset.
+
+    HEADLESS SERVER SCOPE: this image ships no desktop, no Calamares, no GDM and
+    no app-grid icons, so only the BOOT-menu artwork and the REPO badges/avatars
+    are rendered from the mark here (the desktop/installer assets that the
+    Workstation generated were removed with the GUI). The dict order below is the
+    manifest order — keep it stable so regeneration produces a byte-identical
+    manifest layout."""
     A = {}
     C = lambda p: os.path.join(CHROOT, p)
     L = lambda p: os.path.join(LB, p)
@@ -315,52 +322,15 @@ def build():
     A[C("boot/grub/themes/sysible/logo.png")] = hlockup(1040, 300, FG_DARK)
     # background = topo field with the lockup BAKED IN (see grub_background / theme.txt).
     A[C("boot/grub/themes/sysible/background.png")] = grub_background(1920, 1080)
-    # Boot — composed splashes.
+    # Boot — composed splashes (isolinux/BIOS + GRUB/UEFI backgrounds).
     A[L("branding/splash.png")] = splash(1920, 1080)
     A[L("bootloaders/isolinux/splash.png")] = splash(800, 600)
     A[("tga", L("binary_grub/splash.tga"))] = splash(640, 480)
-    # Plymouth (boot animation) + Calamares (installer) + GDM.
-    # Plymouth boot/shutdown splash: vertical lockup so the loading screen shows
-    # the "SYSIBLE LINUX" wordmark under the mark (a bare mark read as unbranded).
-    # Rendered at 2x (was 360x320) so the baked "SYSIBLE LINUX" wordmark stays
-    # crisp on the boot splash — Plymouth blits the sprite 1:1, so a small source
-    # read soft/upscaled on HiDPI panels.
-    A[C("usr/share/plymouth/themes/sysible/logo.png")] = vlockup(720, 640, FG_DARK)
-    A[C("etc/calamares/branding/sysible/sysible-logo.png")] = centred_mark(96, 104, pad=0.02)
-    # Calamares HERO (productWelcome) + slideshow mark — the big centred logo.
-    A[C("etc/calamares/branding/sysible/sysible-welcome.png")] = centred_mark(240, 260, pad=0.04)
-    A[C("etc/calamares/branding/sysible/mark.png")] = centred_mark(440, 476, pad=0.04)
-    # Login / GDM / polkit avatar (.face) — the mark on the dark field, shown in a
-    # circle. The 9000 hook copies sysible-face.png over .face + the AccountsService
-    # icon at build, so all three are generated identically here to stay in sync.
-    _face = avatar(256)
-    A[C("usr/share/pixmaps/sysible-face.png")] = _face
-    A[C("etc/skel/.face")] = _face
-    A[C("var/lib/AccountsService/icons/user")] = _face
-    # Calamares productLogo — render from the (solid, family-style) install icon so
-    # the install window matches the dock instead of the old hollow-gradient art.
-    A[C("etc/calamares/branding/sysible/install-logo.png")] = _svg_png(INSTALL_SVG, 512)
-    # The SysTerm/install DOCK icons themselves are the approved art and are not
-    # regenerated here (they derive from their own SVGs, not the brand mark).
-    # Pixmaps (app + README + system).
-    A[C("usr/share/pixmaps/sysible-logo.png")] = centred_mark(256, 256, pad=0.04)
-    A[C("usr/share/pixmaps/sysible-logo-dark.png")] = vlockup(512, 555, FG_DARK)
-    A[C("usr/share/pixmaps/sysible-logo-light.png")] = vlockup(512, 555, FG_LIGHT)
-    A[C("usr/share/pixmaps/sysible-linux-logo.png")] = vlockup(512, 555, FG_DARK)
-    # App-grid icon: keep the hicolor SVG byte-synced with the canonical mark, and
-    # render its PNG sizes so themed environments have crisp rasters.
-    for sz in (16, 22, 24, 32, 48, 64, 128, 256):
-        A[C(f"usr/share/icons/hicolor/{sz}x{sz}/apps/sysible-logo.png")] = mark(sz)
     # README badges.
     A[G(".github/sysible-logo-dark.png")] = hlockup(980, 260, FG_DARK)
     A[G(".github/sysible-logo-light.png")] = hlockup(980, 260, FG_LIGHT)
-
-    # Sysible Controller — matched family mark (same body, hub+nodes design).
-    for sz in (48, 64, 128, 256):
-        A[C(f"usr/share/icons/hicolor/{sz}x{sz}/apps/sysible-controller.png")] = controller_mark(sz)
-    A[C("usr/share/pixmaps/sysible-controller.png")] = controller_mark(256)
-
-    # Social avatars (square, circle-crop-safe) for GitHub org + Twitter/X.
+    # Social avatars (square, circle-crop-safe) for GitHub org + Twitter/X. These
+    # are the bare mark on the field (no wordmark), so they are brand-name neutral.
     A[G("branding/social/github-avatar.png")] = avatar(512)
     A[G("branding/social/twitter-avatar.png")] = avatar(400)
     A[G("branding/social/controller-avatar.png")] = avatar(512, CONTROLLER_MARK)
@@ -391,16 +361,10 @@ def _target_path(key):
 def main():
     check = "--check" in sys.argv
     assets = build()
-    # Keep every SVG copy byte-identical to its canonical source, so no consumer
-    # (app grid, lockscreen renderer, pixmap lookups) can pick up old art again.
-    # (target_path, source_svg): the Linux marks track sysible-mark.svg; the
-    # Controller dock icon tracks sysible-controller-mark.svg.
-    svg_targets = [
-        (os.path.join(CHROOT, "usr/share/icons/hicolor/scalable/apps/sysible-logo.svg"), MARK),
-        (os.path.join(CHROOT, "usr/share/pixmaps/sysible-logo-dark.svg"), MARK),
-        (os.path.join(CHROOT, "usr/share/pixmaps/sysible-logo-light.svg"), MARK),
-        (os.path.join(CHROOT, "usr/share/icons/hicolor/scalable/apps/sysible-controller.svg"), CONTROLLER_MARK),
-    ]
+    # HEADLESS SERVER: the desktop SVG copies (app-grid / pixmap icons) that the
+    # Workstation kept byte-synced here were removed with the GUI, so there are no
+    # SVG targets to sync — only the two canonical marks (hashed below) remain.
+    svg_targets = []
     src_bytes = {p: open(p, "rb").read() for p in {MARK, CONTROLLER_MARK}}
 
     drift = []

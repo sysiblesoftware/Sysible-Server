@@ -1,15 +1,14 @@
-# sysible branding manifest — sha256 of the canonical marks + the boot-menu and
-# repo assets rendered from them. Regenerate with: python3 branding/render-branding.py
-# (Headless Sysible Server: desktop icon, pixmap, and installer assets removed.)
+# sysible branding manifest — sha256 of the canonical marks + every
+# generated asset. Regenerate with: python3 branding/render-branding.py
 7c7df434c6b28ae75f1a3b67f072e47c9c69484ad6dab8e1e280a041de5796c9  branding/logo/sysible-mark.svg
 a81f1938ad8589d89c6af1392efd67bd1ba2c6fe73c9316f0dbb484000db717c  branding/logo/sysible-controller-mark.svg
-60ca32184e4bd73383e63e3a2a67a7aabcc1016c96661cbb3b0ed190d916da42  live-build/config/includes.chroot/boot/grub/themes/sysible/logo.png
-b04e4c7e1e429d519125e67aefcdaa74192efc7b6be8d221a6a89a48d42e6716  live-build/config/includes.chroot/boot/grub/themes/sysible/background.png
-e44dd9aecada448c25395292fc2d721ed057993b455772cac97f94bd2f7cc5ca  live-build/config/branding/splash.png
-280ba9bb2d27e3b774111f2b4f5d04fa9974760a8c2864e7cafc58f85f53cd11  live-build/config/bootloaders/isolinux/splash.png
-c43d0571daa8128828c7bf0091c1674fede63d167878e69d5a5dfbf0dc7ea0fb  live-build/config/binary_grub/splash.tga
-8486d1e8a8609db22ccdba57ecf62567be46a81116021f499d0ae703832e45d2  .github/sysible-logo-dark.png
-a33bc67170b7bbf39a10608f08693bae9b7b86d570c3c58a06016b8bb41b8f19  .github/sysible-logo-light.png
+ccd1e83c90b1123f2c64bf159c773aa0d8002427bc9506828b0d876e804b6538  live-build/config/includes.chroot/boot/grub/themes/sysible/logo.png
+7c2f524e946a6249a506abaeb3e4dd5713680a16db00af520a6c4b035bba7040  live-build/config/includes.chroot/boot/grub/themes/sysible/background.png
+ccca6c2d77f21981532afbcbeea323c15f5cffe27374aa96e671e5d8f9d3f426  live-build/config/branding/splash.png
+508e76b8fa3642d96c71565305ede87f3fc12b753dd36dc2dd61ee75a9c158d5  live-build/config/bootloaders/isolinux/splash.png
+a6e41e30a83085a87a409a49b51b79855bc90a258898275c2252590255a3830a  live-build/config/binary_grub/splash.tga
+cf5a3f38406972d9adb2fda9373be60f5a35d54ec4eda214d14d1da79aca77bb  .github/sysible-logo-dark.png
+2acebeafd2786a57adc464c373af830b571f8c36653063d36833387329a01342  .github/sysible-logo-light.png
 6a656b5daf1cfbb9e3203cd56a5d58a21fbc33b365b5ba271e9d7f8e5db7d2fd  branding/social/github-avatar.png
 ee60b9485c7122eb3d570b6add3fe11a49c096cca66300a238e42d4e2fb44c3a  branding/social/twitter-avatar.png
 e8fd59b366d6fccd5403ed88f003e60f584531c4a53867b985306e90dbf01167  branding/social/controller-avatar.png
