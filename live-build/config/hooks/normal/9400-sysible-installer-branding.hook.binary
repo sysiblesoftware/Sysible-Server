@@ -29,6 +29,14 @@ if [ -z "$BANNER" ] || [ ! -f "$BANNER" ]; then
 fi
 command -v cpio >/dev/null 2>&1 || { echo "sysible-installer-branding: cpio unavailable — skipping." >&2; exit 0; }
 
+# The preseed is ALSO injected into the installer initrd, at its root. d-i loads
+# /preseed.cfg from its own initrd AUTOMATICALLY — no kernel argument required.
+# That matters: the file=/cdrom/preseed.cfg boot argument is easy to lose (a
+# menu entry that doesn't carry it, a manual boot, an expert install), and if it
+# is lost the bootloader fixes in the preseed never run and the installed system
+# has nothing to boot. Initrd preseeding cannot be lost this way.
+PRESEED="${SYSIBLE_PRESEED:-}"
+
 # --- Sysible GTK+2 palette for the graphical installer ---------------------
 # Appended to the installer's own gtkrc. `widget "*"` / `class "*"` bound at
 # `: highest` priority beat the stock theme's per-widget bindings, so this
@@ -96,6 +104,15 @@ for initrd in $(find . -type f -name 'initrd.gz' 2>/dev/null); do
         [ -e "$work/usr/share/graphics/$g" ] && cp -f "$BANNER" "$work/usr/share/graphics/$g"
     done
 
+    # 1b) preseed at the initrd root -> auto-loaded by d-i, no boot argument.
+    if [ -n "$PRESEED" ] && [ -f "$PRESEED" ]; then
+        cp -f "$PRESEED" "$work/preseed.cfg"
+        chmod 0644 "$work/preseed.cfg"
+        preseed_in_initrd=yes
+    else
+        preseed_in_initrd=no
+    fi
+
     # 2) colour palette -> append the Sysible brand style to every gtkrc the
     #    installer ships (path varies across d-i versions, so patch by name).
     gtkrc_hit=0
@@ -114,7 +131,7 @@ for initrd in $(find . -type f -name 'initrd.gz' 2>/dev/null); do
     ( cd "$work" && find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 ) > "$initrd.new" \
         && mv -f "$initrd.new" "$initrd"
     rm -rf "$work"
-    echo "sysible-installer-branding: rebranded $initrd (logo + $gtkrc_hit gtkrc)" >&2
+    echo "sysible-installer-branding: rebranded $initrd (logo + $gtkrc_hit gtkrc + preseed=$preseed_in_initrd)" >&2
     patched=$((patched + 1))
 done
 

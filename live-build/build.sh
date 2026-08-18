@@ -119,6 +119,9 @@ lb config
 # ISO's /install directory structure and checksums stay intact, unlike editing
 # the finished ISO). Exported so the hook inherits it regardless of its CWD.
 export SYSIBLE_INSTALLER_BANNER="$ROOT/branding/installer/logo_installer.png"
+# Absolute path to the preseed, injected INTO the installer initrd by hook 9400 so
+# d-i auto-loads it without depending on the file=/cdrom/preseed.cfg boot argument.
+export SYSIBLE_PRESEED="$PWD/config/includes.binary/preseed.cfg"
 $SUDO lb build
 
 # --- brand GRUB (UEFI, incl. arm64) in the finished ISO --------------------
