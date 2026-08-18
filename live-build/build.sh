@@ -147,7 +147,9 @@ if [ -n "$ISO" ]; then
         # We do NOT hand-add an install entry: `--debian-installer live` makes
         # live-build generate its own "… Installer" menu entries for the text-mode
         # Debian Installer, so the boot menu already offers Install/Rescue.
-        python3 - "$WORK/grub.cfg" <<'PY'
+        GTK_INITRD=0; [ -f binary/install/gtk/initrd.gz ] && GTK_INITRD=1
+        echo "GRUB-DEBUG: gtk installer initrd present = $GTK_INITRD"
+        python3 - "$WORK/grub.cfg" "$GTK_INITRD" <<'PY'
 import sys, re
 p = sys.argv[1]; s = open(p).read()
 s = re.sub(r'Live system \((.*?) fail-safe mode\)', r'Sysible Server (Live, safe graphics) [\1]', s)
@@ -160,6 +162,14 @@ s = s.replace('Debian GNU/Linux', 'Sysible Server')
 #   kernel first.
 # Repoint the kernel at the shared one; the gtk initrd line stays as-is.
 s = re.sub(r'(/install[^/\s]*)/gtk/vmlinuz', r'\1/vmlinuz', s)
+# ...and if this arch ships NO graphical installer at all (arm64 has only
+# install/vmlinuz + install/initrd.gz — no gtk/ directory whatsoever), the gtk
+# INITRD line is dangling too. Point it at the text installer's initrd so the
+# entry boots the installer that actually exists instead of dying on a missing
+# file. On amd64 the gtk initrd is present, so this rewrite is skipped and the
+# graphical installer keeps its own initrd.
+if len(sys.argv) > 2 and sys.argv[2] != '1':
+    s = re.sub(r'(/install[^/\s]*)/gtk/initrd\.gz', r'\1/initrd.gz', s)
 # Brand the live GRUB menu with the Sysible THEME (dark hex background, centered
 # mark, GREEN TEXT highlight — not a solid bar — and the "GNU GRUB version" line
 # hidden). This MUST be APPENDED, not prepended: live-build's generated grub.cfg
