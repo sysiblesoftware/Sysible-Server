@@ -17,6 +17,23 @@ OSREL
 printf 'Sysible Server \\n \\l\n\n' > /etc/issue
 echo "Sysible Server" > /etc/issue.net
 
+# MOTD — remove the Debian boilerplate shown after login. Two separate sources:
+#   1. /etc/motd (from base-files): "The programs included with the Debian
+#      GNU/Linux system are free software ... ABSOLUTELY NO WARRANTY ..."
+#   2. /etc/update-motd.d/10-uname: prints "Linux <host> 6.1.0-52-arm64 #1 SMP
+#      Debian 6.1.180-1 ..." into /run/motd.dynamic, which pam_motd then shows.
+# Replace (1) with a short Sysible banner and disable (2) so the kernel/Debian
+# version line stops appearing. The dynamic file is cleared so the live session
+# doesn't show a stale copy.
+cat > /etc/motd <<'MOTD'
+
+Sysible Server — engineering & automation server
+Docs: https://sysible.com
+
+MOTD
+chmod -x /etc/update-motd.d/10-uname 2>/dev/null || true
+rm -f /run/motd.dynamic 2>/dev/null || true
+
 # Enable the server-relevant daemons. SSH is enabled by default on a headless
 # server (you administer it remotely); the shipped
 # /etc/ssh/sshd_config.d/10-sysible.conf drop-in keeps it key-only, so add your

@@ -28,6 +28,23 @@ OSREL
     echo "sysible-guard: os-release re-branded"
 fi
 
+# 1b) MOTD — base-files upgrades restore Debian's login boilerplate and re-enable
+# the uname line. Put the Sysible banner back and keep the kernel/Debian version
+# line off.
+if grep -qi "debian" /etc/motd 2>/dev/null; then
+    cat > /etc/motd <<'MOTD'
+
+Sysible Server — engineering & automation server
+Docs: https://sysible.com
+
+MOTD
+    echo "sysible-guard: motd re-branded"
+fi
+if [ -x /etc/update-motd.d/10-uname ]; then
+    chmod -x /etc/update-motd.d/10-uname 2>/dev/null || true
+    echo "sysible-guard: dynamic uname motd disabled"
+fi
+
 # 2) GRUB entry titles — grub-common upgrades restore the stock 10_linux, turning
 #    "Sysible Server" back into "Sysible Server GNU/Linux". Re-apply the one-line
 #    patch, and only regenerate grub.cfg if we actually changed something.
