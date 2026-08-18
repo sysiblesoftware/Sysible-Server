@@ -1,53 +1,48 @@
 #!/bin/sh
-# Sysible-brand the Debian graphical installer: banner logo + colour palette.
+# Prepare the Debian Installer: inject the preseed, apply Sysible branding, and
+# guarantee the paths the boot menu references actually exist.
 #
-# The graphical installer (cdebconf-gtk) reads two things from its own initrd:
-#   * the banner at the top: usr/share/graphics/logo_installer.png + logo_debian.png
-#   * a GTK+2 rc file (name: "gtkrc") that defines the colour scheme — the stock
-#     beige/tan palette lives there.
-# Both are baked into the installer initrd (install*/initrd.gz). We patch them
-# HERE, in the binary/ tree, as a BINARY hook — which live-build runs during the
-# binary stage BEFORE binary_iso assembles the ISO and BEFORE binary_checksums
-# computes md5sum.txt. That is the crucial difference from editing the finished
-# ISO with xorriso: doing it pre-assembly keeps the /install directory structure
-# intact (editing the built ISO materialised /install and broke the path to
-# vmlinuz -> "file /install/gtk/vmlinuz not found"), and the checksums are
-# computed over the already-patched initrd so integrity still verifies.
+# Runs as a BINARY hook, i.e. during the binary stage BEFORE binary_iso builds
+# the ISO and BEFORE binary_checksums runs. That ordering matters: editing the
+# finished ISO instead breaks the /install directory layout (it produced
+# "file /install/gtk/vmlinuz not found"), and doing it here means checksums are
+# computed over the already-patched files.
 #
-# The banner asset is passed as an ABSOLUTE path via SYSIBLE_INSTALLER_BANNER
-# (exported by build.sh) so it resolves no matter what CWD live-build gives the
-# hook. Installer initrds are found by CONTENT (they contain the banner file), so
-# this never depends on the exact d-i path, and the live-boot initrd — which has
-# no such file — is skipped untouched. Best-effort: never fails the build; logs
-# what it patched (or warns) so a future path/format change is diagnosable.
+# THREE JOBS, in order:
+#
+# 1. PRESEED into every installer initrd. d-i automatically loads /preseed.cfg
+#    from the root of its own initrd — no kernel argument, nothing to lose. This
+#    is what carries the bootloader fixes (EFI removable path + BIOS
+#    grub-install), so if it is missing the installed system has nothing to boot.
+#
+#    Installer initrds are found BY PATH (anything named initrd*.gz under an
+#    install*/ directory). The previous content probe looked for the graphical
+#    banner instead, which silently matched NOTHING on arm64 — that image ships
+#    only a TEXT installer with no graphics — so arm64 got no preseed at all and
+#    every bootloader fix was absent from it.
+#
+# 2. BRANDING, only for initrds that actually contain the graphical installer
+#    (banner PNGs / gtkrc). A text-mode installer has neither; skipping it there
+#    is correct, not a failure.
+#
+# 3. GTK FALLBACK. The generated menu offers a "Graphical install" entry pointing
+#    at install/gtk/{vmlinuz,initrd.gz}. On arm64 that directory does not exist
+#    at all, so the entry dies with "file not found ... you need to load the
+#    kernel first". Rather than rewrite menu files (whose location varies), make
+#    the referenced paths real by copying the text installer's kernel/initrd into
+#    install/gtk/. Any entry that points there then boots the installer that
+#    exists. Where a real graphical installer IS shipped (amd64) nothing is
+#    overwritten.
+#
+# Best-effort throughout: never fail the build, and log what happened.
 set -e
 
 BANNER="${SYSIBLE_INSTALLER_BANNER:-}"
-if [ -z "$BANNER" ] || [ ! -f "$BANNER" ]; then
-    echo "sysible-installer-branding: banner asset not found (SYSIBLE_INSTALLER_BANNER='$BANNER') — skipping." >&2
-    exit 0
-fi
-command -v cpio >/dev/null 2>&1 || { echo "sysible-installer-branding: cpio unavailable — skipping." >&2; exit 0; }
-
-# The preseed is ALSO injected into the installer initrd, at its root. d-i loads
-# /preseed.cfg from its own initrd AUTOMATICALLY — no kernel argument required.
-# That matters: the file=/cdrom/preseed.cfg boot argument is easy to lose (a
-# menu entry that doesn't carry it, a manual boot, an expert install), and if it
-# is lost the bootloader fixes in the preseed never run and the installed system
-# has nothing to boot. Initrd preseeding cannot be lost this way.
 PRESEED="${SYSIBLE_PRESEED:-}"
+command -v cpio >/dev/null 2>&1 || { echo "sysible-installer: cpio unavailable — skipping." >&2; exit 0; }
 
-# --- Sysible GTK+2 palette for the graphical installer ---------------------
-# Appended to the installer's own gtkrc. `widget "*"` / `class "*"` bound at
-# `: highest` priority beat the stock theme's per-widget bindings, so this
-# recolours every surface from the beige default to the Sysible dark-green brand.
-# It only sets colours (no engine, no geometry) so it cannot break the installer:
-# unparsed lines are ignored by GTK, and the g-i uses the default engine.
 SYSIBLE_GTKRC='
 # --- Sysible Server brand palette (appended last, highest priority) --------
-# Dark base with the full brand duotone — GREEN (#1f9d55) for hover/progress and
-# BLUE (#3f6fb5, from the brand blue #7aa2ff) for selection/focus — so the
-# installer is not a wall of green. Light text (#e9f0f7) on a near-black base.
 style "sysible-brand" {
     bg[NORMAL]        = "#0f1620"
     bg[PRELIGHT]      = "#1f9d55"
@@ -76,8 +71,6 @@ style "sysible-brand" {
 class  "*" style : highest "sysible-brand"
 widget "*" style : highest "sysible-brand"
 
-# The progress bar reads its fill from the PROGRESSBAR-specific slots — keep that
-# the brand GREEN so install progress stays green while selections go blue.
 style "sysible-progress" = "sysible-brand" {
     bg[PRELIGHT]   = "#1f9d55"
     fg[PRELIGHT]   = "#08130c"
@@ -87,60 +80,56 @@ widget_class "*GtkProgress*" style : highest "sysible-progress"
 class        "*GtkProgress*" style : highest "sysible-progress"
 '
 
-patched=0
-# CWD during a binary hook is not guaranteed, so search from '.' for any gzip
-# initrd; the content probe below decides which are installer initrds.
-for initrd in $(find . -type f -name 'initrd.gz' 2>/dev/null); do
+echo "sysible-installer: preseed='${PRESEED:-<unset>}' banner='${BANNER:-<unset>}'"
+echo "sysible-installer: installer trees found:"
+find . -maxdepth 3 -type d -name 'install*' 2>/dev/null | sed 's/^/    /' || true
+
+patched=0; preseeded=0; branded=0
+# BY PATH, not by content — a text-mode installer initrd carries no graphics.
+for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null); do
     gzip -t "$initrd" 2>/dev/null || continue
-    if ! gzip -dc "$initrd" 2>/dev/null | cpio -t --quiet 2>/dev/null \
-         | grep -qE 'usr/share/graphics/logo_(installer|debian)\.png'; then
-        continue    # not an installer initrd (e.g. the live-boot initrd) — leave it alone
-    fi
     work=$(mktemp -d)
     gzip -dc "$initrd" 2>/dev/null | ( cd "$work" && cpio -idm --quiet 2>/dev/null ) || { rm -rf "$work"; continue; }
 
-    # 1) banner logo -> Sysible Server wordmark
-    for g in logo_installer.png logo_debian.png; do
-        [ -e "$work/usr/share/graphics/$g" ] && cp -f "$BANNER" "$work/usr/share/graphics/$g"
-    done
+    did_preseed=no; did_brand=no
 
-    # 1b) preseed at the initrd root -> auto-loaded by d-i, no boot argument.
+    # 1) preseed at the initrd root — auto-loaded by d-i, no boot argument.
     if [ -n "$PRESEED" ] && [ -f "$PRESEED" ]; then
-        cp -f "$PRESEED" "$work/preseed.cfg"
-        chmod 0644 "$work/preseed.cfg"
-        preseed_in_initrd=yes
-    else
-        preseed_in_initrd=no
+        cp -f "$PRESEED" "$work/preseed.cfg" && chmod 0644 "$work/preseed.cfg"
+        did_preseed=yes; preseeded=$((preseeded + 1))
     fi
 
-    # 2) colour palette -> append the Sysible brand style to every gtkrc the
-    #    installer ships (path varies across d-i versions, so patch by name).
-    gtkrc_hit=0
-    for rc in $(cd "$work" && find . -type f -name 'gtkrc' 2>/dev/null); do
-        printf '%s\n' "$SYSIBLE_GTKRC" >> "$work/${rc#./}"
-        gtkrc_hit=$((gtkrc_hit + 1))
-    done
-    # Fallback: if the initrd shipped no gtkrc under a name we matched, drop one
-    # at the canonical GTK+2 system path so it is still read.
-    if [ "$gtkrc_hit" = 0 ]; then
-        mkdir -p "$work/etc/gtk-2.0"
-        printf '%s\n' "$SYSIBLE_GTKRC" >> "$work/etc/gtk-2.0/gtkrc"
-        gtkrc_hit=1
+    # 2) branding — only meaningful for the graphical installer.
+    if [ -n "$BANNER" ] && [ -f "$BANNER" ] && [ -d "$work/usr/share/graphics" ]; then
+        for g in logo_installer.png logo_debian.png; do
+            [ -e "$work/usr/share/graphics/$g" ] && cp -f "$BANNER" "$work/usr/share/graphics/$g" && did_brand=yes
+        done
     fi
+    for rc in $(cd "$work" && find . -type f -name 'gtkrc' 2>/dev/null); do
+        printf '%s\n' "$SYSIBLE_GTKRC" >> "$work/${rc#./}"; did_brand=yes
+    done
+    [ "$did_brand" = yes ] && branded=$((branded + 1))
 
     ( cd "$work" && find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 ) > "$initrd.new" \
         && mv -f "$initrd.new" "$initrd"
     rm -rf "$work"
-    echo "sysible-installer-branding: rebranded $initrd (logo + $gtkrc_hit gtkrc + preseed=$preseed_in_initrd)" >&2
+    echo "sysible-installer: patched $initrd (preseed=$did_preseed branding=$did_brand)"
     patched=$((patched + 1))
 done
+echo "sysible-installer: $patched installer initrd(s): $preseeded preseeded, $branded branded."
+[ "$preseeded" = 0 ] && echo "sysible-installer: WARNING — NO initrd received the preseed; the installed system may have no bootloader." >&2
 
-echo "sysible-installer-branding: rebranded $patched installer initrd(s)." >&2
-if [ "$patched" = 0 ]; then
-    echo "sysible-installer-branding: WARNING — no installer initrd carried the banner; the installer keeps Debian branding. Graphics found:" >&2
-    for initrd in $(find . -type f -name 'initrd.gz' 2>/dev/null); do
-        g="$(gzip -dc "$initrd" 2>/dev/null | cpio -t --quiet 2>/dev/null | grep -iE 'graphics|logo|\.png' | head)"
-        [ -n "$g" ] && { echo "   --- $initrd ---" >&2; echo "$g" >&2; }
-    done
-fi
+# 3) Make install/gtk/* real wherever the menu may point at it.
+for d in $(find . -maxdepth 3 -type d -name 'install*' 2>/dev/null); do
+    [ -f "$d/vmlinuz" ] || continue
+    mkdir -p "$d/gtk" 2>/dev/null || continue
+    if [ ! -f "$d/gtk/vmlinuz" ]; then
+        cp -f "$d/vmlinuz" "$d/gtk/vmlinuz" && echo "sysible-installer: created $d/gtk/vmlinuz (shared kernel — the graphical entry needs this path)"
+    fi
+    if [ ! -f "$d/gtk/initrd.gz" ] && [ -f "$d/initrd.gz" ]; then
+        cp -f "$d/initrd.gz" "$d/gtk/initrd.gz" && echo "sysible-installer: created $d/gtk/initrd.gz (falls back to the text installer)"
+    fi
+done
+echo "sysible-installer: final installer payload:"
+find . -type f -path '*install*' \( -name 'vmlinuz*' -o -name 'initrd*.gz' \) -exec ls -la {} \; 2>/dev/null | sed 's/^/    /'
 exit 0
