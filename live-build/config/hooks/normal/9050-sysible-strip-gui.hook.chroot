@@ -1,0 +1,33 @@
+#!/bin/sh
+# Strip the X server from the headless server image.
+#
+# live-build installs Recommends, and qemu-system-gui (recommended by the qemu
+# stack) drags in the full Xorg server: `xorg`, `xserver-xorg-core`, video/input
+# drivers, x11-xserver-utils. A headless server must not ship an X server — it is
+# dead weight, and it muddies diagnosis of display problems. There is no display
+# manager, so X never auto-starts, but we remove it outright so the image is
+# genuinely headless.
+#
+# Best-effort and NON-FATAL by design: never fail the build over cleanup. Each
+# step is guarded, and the hook always exits 0.
+set +e
+export DEBIAN_FRONTEND=noninteractive
+
+echo "sysible-strip-gui: X packages before: $(dpkg -l 2>/dev/null | grep -cE '^ii\s+(xserver-xorg|xorg)')"
+
+# Remove the pull source (qemu's GUI front-end) and the X server itself. We do
+# NOT touch GTK libraries — other tools legitimately link them. autoremove then
+# reaps the now-orphaned X driver/util packages.
+apt-get purge -y \
+    qemu-system-gui \
+    xorg xserver-xorg xserver-xorg-core xserver-common \
+    x11-xserver-utils xserver-xorg-legacy \
+    >/dev/null 2>&1
+# Any remaining xserver-xorg-video-* / -input-* driver udebs, by name.
+for p in $(dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E '^xserver-xorg-(video|input)-'); do
+    apt-get purge -y "$p" >/dev/null 2>&1
+done
+apt-get autoremove --purge -y >/dev/null 2>&1
+
+echo "sysible-strip-gui: X packages after:  $(dpkg -l 2>/dev/null | grep -cE '^ii\s+(xserver-xorg|xorg)')"
+exit 0
