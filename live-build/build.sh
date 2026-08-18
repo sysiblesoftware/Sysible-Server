@@ -249,6 +249,34 @@ fi
 # --- verify boot branding landed in the built tree -------------------------
 # binary/ persists after lb build, so we can prove the overrides were consumed
 # without downloading the ISO. Look for our title + splash in the assembled tree.
+# ---- HARD GATE: the installer payload must be complete, on EVERY arch ------
+# This exists because arm64 shipped for days with NO preseed in its installer
+# initrd (the old content probe matched only the graphical installer, which arm64
+# does not have) and with the gtk paths its own boot menu references missing. It
+# was visible in the build log and simply never read. So assert it instead:
+# if the image cannot install a bootloader, FAIL THE BUILD rather than publish an
+# ISO that dies at first boot.
+echo "===== INSTALLER PAYLOAD GATE ====="
+gate_fail=0
+for f in install/vmlinuz install/initrd.gz install/gtk/vmlinuz install/gtk/initrd.gz; do
+    if [ -f "binary/$f" ]; then echo "  [ok]   binary/$f"
+    else echo "  [FAIL] binary/$f MISSING" >&2; gate_fail=1; fi
+done
+for i in binary/install/initrd.gz binary/install/gtk/initrd.gz; do
+    [ -f "$i" ] || continue
+    if gzip -dc "$i" 2>/dev/null | cpio -t --quiet 2>/dev/null | grep -qE '^\./?preseed\.cfg$'; then
+        echo "  [ok]   preseed.cfg inside $i"
+    else
+        echo "  [FAIL] $i has NO preseed.cfg — the installed system would have no bootloader" >&2
+        gate_fail=1
+    fi
+done
+if [ "$gate_fail" != 0 ]; then
+    echo "FATAL: installer payload incomplete — refusing to publish this ISO." >&2
+    exit 1
+fi
+echo "===== installer payload gate PASSED ====="
+
 echo "===== POST-BUILD boot-branding verification ====="
 # Installer payload inventory. The "Graphical install" entry used to point at
 # /install/gtk/vmlinuz, which Debian's CD layout does not ship (only the gtk
