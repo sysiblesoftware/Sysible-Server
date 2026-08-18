@@ -153,6 +153,13 @@ p = sys.argv[1]; s = open(p).read()
 s = re.sub(r'Live system \((.*?) fail-safe mode\)', r'Sysible Server (Live, safe graphics) [\1]', s)
 s = re.sub(r'Live system \((.*?)\)', r'Sysible Server (Live) [\1]', s)
 s = s.replace('Debian GNU/Linux', 'Sysible Server')
+# FIX: the graphical-installer entry points at /install/gtk/vmlinuz, which does
+# NOT exist. Debian's CD layout ships only the gtk INITRD in install/gtk/ and
+# shares the kernel at install/vmlinuz, so booting "Graphical install" dies with
+#   error: file `/install/gtk/vmlinuz' not found.  error: you need to load the
+#   kernel first.
+# Repoint the kernel at the shared one; the gtk initrd line stays as-is.
+s = re.sub(r'(/install[^/\s]*)/gtk/vmlinuz', r'\1/vmlinuz', s)
 # Brand the live GRUB menu with the Sysible THEME (dark hex background, centered
 # mark, GREEN TEXT highlight — not a solid bar — and the "GNU GRUB version" line
 # hidden). This MUST be APPENDED, not prepended: live-build's generated grub.cfg
@@ -233,6 +240,17 @@ fi
 # binary/ persists after lb build, so we can prove the overrides were consumed
 # without downloading the ISO. Look for our title + splash in the assembled tree.
 echo "===== POST-BUILD boot-branding verification ====="
+# Installer payload inventory. The "Graphical install" entry used to point at
+# /install/gtk/vmlinuz, which Debian's CD layout does not ship (only the gtk
+# initrd lives there; the kernel is shared at /install/vmlinuz). Listing what is
+# actually present makes a missing/renamed installer file obvious in the log
+# instead of only at boot time.
+echo "----- installer payload (binary/install) -----"
+find binary/install -maxdepth 2 -type f \( -name 'vmlinuz*' -o -name 'initrd*' \) -exec ls -la {} \; 2>/dev/null \
+  || echo "  (no binary/install tree?)"
+echo "----- grub install entries after rewrite -----"
+grep -nE "linux[[:space:]]+/install|initrd[[:space:]]+/install" binary/boot/grub/grub.cfg 2>/dev/null | head -12 \
+  || echo "  (no /install entries found in grub.cfg)"
 for f in $(find binary -maxdepth 4 -name 'menu.cfg' -o -maxdepth 4 -name 'grub.cfg' 2>/dev/null); do
     echo "----- $f -----"
     grep -iE 'menu title|menuentry|background_image|set (menu_)?color|Sysible|Debian' "$f" 2>/dev/null | head -20
