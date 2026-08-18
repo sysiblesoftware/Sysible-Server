@@ -37,33 +37,46 @@ command -v cpio >/dev/null 2>&1 || { echo "sysible-installer-branding: cpio unav
 # unparsed lines are ignored by GTK, and the g-i uses the default engine.
 SYSIBLE_GTKRC='
 # --- Sysible Server brand palette (appended last, highest priority) --------
+# Dark base with the full brand duotone — GREEN (#1f9d55) for hover/progress and
+# BLUE (#3f6fb5, from the brand blue #7aa2ff) for selection/focus — so the
+# installer is not a wall of green. Light text (#e9f0f7) on a near-black base.
 style "sysible-brand" {
-    bg[NORMAL]        = "#101b15"
+    bg[NORMAL]        = "#0f1620"
     bg[PRELIGHT]      = "#1f9d55"
-    bg[SELECTED]      = "#1f9d55"
-    bg[ACTIVE]        = "#16261d"
-    bg[INSENSITIVE]   = "#101b15"
+    bg[SELECTED]      = "#3f6fb5"
+    bg[ACTIVE]        = "#16324a"
+    bg[INSENSITIVE]   = "#0f1620"
 
-    fg[NORMAL]        = "#e6efe9"
+    fg[NORMAL]        = "#e9f0f7"
     fg[PRELIGHT]      = "#08130c"
-    fg[SELECTED]      = "#08130c"
-    fg[ACTIVE]        = "#e6efe9"
-    fg[INSENSITIVE]   = "#6b7a70"
+    fg[SELECTED]      = "#ffffff"
+    fg[ACTIVE]        = "#e9f0f7"
+    fg[INSENSITIVE]   = "#6b7a8a"
 
-    base[NORMAL]      = "#0b1410"
-    base[PRELIGHT]    = "#0b1410"
-    base[SELECTED]    = "#1f9d55"
-    base[ACTIVE]      = "#16261d"
-    base[INSENSITIVE] = "#0b1410"
+    base[NORMAL]      = "#0b1016"
+    base[PRELIGHT]    = "#0b1016"
+    base[SELECTED]    = "#3f6fb5"
+    base[ACTIVE]      = "#16324a"
+    base[INSENSITIVE] = "#0b1016"
 
-    text[NORMAL]      = "#e6efe9"
-    text[PRELIGHT]    = "#e6efe9"
-    text[SELECTED]    = "#08130c"
-    text[ACTIVE]      = "#e6efe9"
-    text[INSENSITIVE] = "#6b7a70"
+    text[NORMAL]      = "#e9f0f7"
+    text[PRELIGHT]    = "#e9f0f7"
+    text[SELECTED]    = "#ffffff"
+    text[ACTIVE]      = "#e9f0f7"
+    text[INSENSITIVE] = "#6b7a8a"
 }
 class  "*" style : highest "sysible-brand"
 widget "*" style : highest "sysible-brand"
+
+# The progress bar reads its fill from the PROGRESSBAR-specific slots — keep that
+# the brand GREEN so install progress stays green while selections go blue.
+style "sysible-progress" = "sysible-brand" {
+    bg[PRELIGHT]   = "#1f9d55"
+    fg[PRELIGHT]   = "#08130c"
+    base[PRELIGHT] = "#1f9d55"
+}
+widget_class "*GtkProgress*" style : highest "sysible-progress"
+class        "*GtkProgress*" style : highest "sysible-progress"
 '
 
 patched=0
