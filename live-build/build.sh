@@ -296,7 +296,11 @@ for f in install/vmlinuz install/initrd.gz install/gtk/vmlinuz install/gtk/initr
 done
 for i in binary/install/initrd.gz binary/install/gtk/initrd.gz; do
     [ -f "$i" ] || continue
-    if gzip -dc "$i" 2>/dev/null | cpio -t --quiet 2>/dev/null | grep -qE '^\./?preseed\.cfg$'; then
+    # `cpio -t` lists the root entry as bare `preseed.cfg` (no leading ./), even
+    # though the hook packs it via `find .` — so the optional prefix MUST be a
+    # grouped, optional `(\./)?`. The earlier `\./?` required a literal dot and
+    # never matched bare `preseed.cfg`, failing this gate on a CORRECT payload.
+    if gzip -dc "$i" 2>/dev/null | cpio -t --quiet 2>/dev/null | grep -qE '^(\./)?preseed\.cfg$'; then
         echo "  [ok]   preseed.cfg inside $i"
     else
         echo "  [FAIL] $i has NO preseed.cfg — the installed system would have no bootloader" >&2
