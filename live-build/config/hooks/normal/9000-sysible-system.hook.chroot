@@ -36,8 +36,10 @@ rm -f /run/motd.dynamic 2>/dev/null || true
 
 # Enable the server-relevant daemons. SSH is enabled by default on a headless
 # server (you administer it remotely); the shipped
-# /etc/ssh/sshd_config.d/10-sysible.conf drop-in keeps it key-only, so add your
-# public key (console/cloud-init) before relying on remote access.
+# /etc/ssh/sshd_config.d/10-sysible.conf drop-in accepts PASSWORD login by
+# default (the account password you set at install — no default credentials
+# ship), so a fresh box is reachable immediately. Add a key + set
+# PasswordAuthentication no there to harden an internet-facing box.
 for svc in ssh libvirtd docker; do systemctl enable "$svc" 2>/dev/null || true; done
 for grp in sudo kvm libvirt docker netdev; do groupadd -f "$grp" 2>/dev/null || true; done
 
