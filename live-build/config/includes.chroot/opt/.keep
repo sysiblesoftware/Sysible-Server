@@ -1,0 +1,8 @@
+# Guarantee /opt exists (root-writable, 0755) on the installed Sysible Server.
+#
+# base-files ships /opt, but an EMPTY directory can be dropped when the live
+# filesystem is squashed and copied to the target by the live installer —
+# leaving the controller and vendor tools (which install under /opt/sysible)
+# with nowhere to go, and `/opt` "missing" on first boot. This placeholder file
+# forces /opt into the chroot -> squashfs -> installed system so it is always
+# present. Safe to leave in place.
