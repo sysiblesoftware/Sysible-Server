@@ -114,20 +114,25 @@ jobs:
           # VMs may be reading. Each suite overwrites its own dists/ in place;
           # orphaned pool files are harmless.
           #
-          # Cache-Control is the crux of correctness behind Cloudflare's CDN:
-          #   * pool/  — content-addressed .deb payloads that never change once
-          #     published, so cache them hard (a year, immutable).
-          #   * dists/ — the Release / Packages / *.bz2 index that apt fetches
-          #     first and validates by size+hash. If the CDN serves a STALE
-          #     index against a FRESH Release, apt fails ("unexpected size").
-          #     It must never be cached: send no-cache and re-upload every run
-          #     so the edge always revalidates against the origin.
+          # Cache-Control is the crux of correctness behind Cloudflare's CDN. NEITHER
+          # tree may be served stale, because apt validates every file by size+hash
+          # against the index:
+          #   * pool/  — aptly names pool files by VERSION, not by content hash
+          #     (…/sysible-branding_0.1.1_all.deb). A rebuild of the SAME version
+          #     (non-reproducible .debs, or a dev republish sharing the pool with a
+          #     stable snapshot) overwrites that path with different bytes. Caching it
+          #     "immutable" then pins the OLD copy at the edge while a fresh index
+          #     expects the new one -> apt fails "File has unexpected size". So the
+          #     pool must revalidate too. (A short max-age still lets the edge store
+          #     it and answer with a cheap 304 when unchanged.)
+          #   * dists/ — the Release / Packages index apt fetches first; never cache.
           #
-          # Pass 1: pool/ (the .deb payloads) — long-lived, immutable.
+          # Pass 1: pool/ (the .deb payloads) — revalidate so a rebuilt .deb is never
+          # served stale.
           if [ -d "$HOME/aptly-public/pool" ]; then
             aws s3 sync "$HOME/aptly-public/pool/" "s3://sysible-apt/apt/pool/" \
               --endpoint-url "$R2_ENDPOINT" --no-progress \
-              --cache-control "public, max-age=31536000, immutable"
+              --cache-control "public, no-cache, must-revalidate"
           fi
           # Pass 2: dists/ (the index metadata) — never cache, always re-upload.
           aws s3 cp "$HOME/aptly-public/dists/" "s3://sysible-apt/apt/dists/" \
