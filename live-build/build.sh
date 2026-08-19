@@ -143,10 +143,13 @@ if [ -n "$ISO" ]; then
     if [ -s "$WORK/grub.cfg" ]; then
         echo "-- grub.cfg BEFORE --"; grep -iE 'menuentry|background_image|Live system|Debian' "$WORK/grub.cfg" | head
         cp config/branding/splash.png "$WORK/sysible-splash.png"
-        # GRUB: rebrand the live entry titles and add the Sysible background/theme.
-        # We do NOT hand-add an install entry: `--debian-installer live` makes
-        # live-build generate its own "… Installer" menu entries for the text-mode
-        # Debian Installer, so the boot menu already offers Install/Rescue.
+        # GRUB: rebrand the live entry titles, add the Sysible background/theme,
+        # and — critically — hand-add an ACTIVE installer entry (see the python
+        # below). live-build's `--debian-installer live` DOES add active Install
+        # entries to the ISOLINUX (BIOS) menu, but for the UEFI GRUB menu it leaves
+        # only COMMENTED "Alternate … installer" examples, so a UEFI boot (VMware
+        # Fusion's default) reaches NO installer at all. That was the real "black
+        # screen with a mouse pointer" — no installer entry, not a graphics bug.
         GTK_INITRD=0; [ -f binary/install/gtk/initrd.gz ] && GTK_INITRD=1
         echo "GRUB-DEBUG: gtk installer initrd present = $GTK_INITRD"
         python3 - "$WORK/grub.cfg" "$GTK_INITRD" <<'PY'
@@ -170,6 +173,35 @@ s = re.sub(r'(/install[^/\s]*)/gtk/vmlinuz', r'\1/vmlinuz', s)
 # graphical installer keeps its own initrd.
 if len(sys.argv) > 2 and sys.argv[2] != '1':
     s = re.sub(r'(/install[^/\s]*)/gtk/initrd\.gz', r'\1/initrd.gz', s)
+# GUARANTEE AN ACTIVE INSTALLER ENTRY IN THE UEFI GRUB MENU.
+# live-build adds active Install entries to the ISOLINUX (BIOS) menu (via
+# install.cfg) but leaves the UEFI GRUB menu with only COMMENTED "Alternate …
+# installer" examples. A UEFI boot — what VMware Fusion/Workstation and most
+# modern firmware do BY DEFAULT — therefore shows only the Live entries and
+# cannot reach the installer at all: a dead/black screen (the pointer you see is
+# the host's, over the un-driven guest display). BIOS VMs installed fine, which
+# is exactly why it "worked before". If no active (uncommented) install entry
+# exists, add Text + Graphical install entries pointing at the payload the 9400
+# hook guarantees is present (install/vmlinuz + install/gtk/vmlinuz + their
+# initrds), each carrying file=/cdrom/preseed.cfg so the bootloader fixes apply.
+# default=0 stays the Live entry, so this NEVER auto-installs — the user picks it.
+if not re.search(r'(?m)^[^#\n]*\blinux\b[^\n]*/install[^\n]*vmlinuz', s):
+    s += (
+        '\n\n# --- Sysible installer entries (UEFI GRUB ships none by default) ---\n'
+        'menuentry "Install Sysible Server" --hotkey=i {\n'
+        '    set background_color=black\n'
+        '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
+        '    initrd /install/initrd.gz\n'
+        '}\n'
+        'menuentry "Install Sysible Server (graphical)" {\n'
+        '    set background_color=black\n'
+        '    linux  /install/gtk/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
+        '    initrd /install/gtk/initrd.gz\n'
+        '}\n'
+    )
+    sys.stderr.write("build.sh: added active UEFI install entries (menu had none)\n")
+else:
+    sys.stderr.write("build.sh: UEFI grub.cfg already has an active install entry\n")
 # Brand the live GRUB menu with the Sysible THEME (dark hex background, centered
 # mark, GREEN TEXT highlight — not a solid bar — and the "GNU GRUB version" line
 # hidden). This MUST be APPENDED, not prepended: live-build's generated grub.cfg
@@ -271,6 +303,22 @@ for i in binary/install/initrd.gz binary/install/gtk/initrd.gz; do
         gate_fail=1
     fi
 done
+# The UEFI GRUB menu MUST offer an active installer entry. live-build ships none
+# there (only commented "Alternate …" examples), so a UEFI boot — VMware Fusion's
+# default — would otherwise reach NO installer at all (the "black screen with a
+# mouse pointer"). The grub rewrite above adds one; re-extract the finished ISO's
+# grub.cfg and PROVE it landed rather than trust it silently — on every arch.
+if [ -n "$ISO" ]; then
+    GCHK=$(mktemp)
+    $SUDO xorriso -osirrox on -indev "$ISO" -extract /boot/grub/grub.cfg "$GCHK" 2>/dev/null || true
+    if grep -qE '^[[:space:]]*linux[[:space:]]+/install[^[:space:]]*vmlinuz' "$GCHK"; then
+        echo "  [ok]   UEFI grub.cfg has an active install entry"
+    else
+        echo "  [FAIL] UEFI grub.cfg has NO active install entry — a UEFI boot (VMware default) cannot reach the installer" >&2
+        gate_fail=1
+    fi
+    rm -f "$GCHK"
+fi
 if [ "$gate_fail" != 0 ]; then
     echo "FATAL: installer payload incomplete — refusing to publish this ISO." >&2
     exit 1
