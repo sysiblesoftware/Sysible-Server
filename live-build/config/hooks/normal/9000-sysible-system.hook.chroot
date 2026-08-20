@@ -29,6 +29,7 @@ cat > /etc/motd <<'MOTD'
 
 Sysible Server — engineering & automation server
 Docs: https://sysible.com
+Optional licensed tools (Terraform, Vault, Consul, …):  sudo sysible-tools
 
 MOTD
 chmod -x /etc/update-motd.d/10-uname 2>/dev/null || true
