@@ -91,12 +91,17 @@ a helper command) can pull the originals from the vendor on request — Sysible
 never re-hosts these binaries, so the license grant is between you and the
 vendor, initiated by you.
 
-| Not shipped | Reason | Shipped instead | How to get the original |
-|-------------|--------|-----------------|-------------------------|
-| Visual Studio Code (Microsoft build) | Proprietary Microsoft license on the branded build | **VSCodium** (MIT) | Tick it on the installer's Optional apps page → installs `code` from packages.microsoft.com |
-| Terraform | BUSL 1.1 (source-available, not FOSS) | **OpenTofu** (MPL-2.0) | Optional apps page → installs `terraform` from apt.releases.hashicorp.com |
-| Packer | BUSL 1.1 | _none (no mainstream open fork)_ | Optional apps page → installs `packer` from apt.releases.hashicorp.com |
-| Obsidian | Proprietary; no apt repo; amd64-only | **CherryTree** (GPL-3.0, incl. arm64) | Run `sysible-install-obsidian` (fetches the official vendor `.deb`) |
+> Note: **Sysible Server is headless** — it uses the Debian text installer, which
+> has no graphical "Optional apps" page (that page exists only on the Sysible Linux
+> **workstation** edition). On the server, install any of the originals below
+> yourself after install by adding the vendor's apt repository and `apt install`-ing
+> the package.
+
+| Not shipped | Reason | Shipped instead | How to get the original (post-install) |
+|-------------|--------|-----------------|----------------------------------------|
+| Terraform | BUSL 1.1 (source-available, not FOSS) | **OpenTofu** (MPL-2.0) | Add `apt.releases.hashicorp.com` and `apt install terraform` |
+| Packer | BUSL 1.1 | _none (no mainstream open fork)_ | Add `apt.releases.hashicorp.com` and `apt install packer` |
+| Visual Studio Code (Microsoft build) | Proprietary Microsoft license on the branded build | **VSCodium** (MIT) | Add `packages.microsoft.com` and `apt install code` (a GUI app — usually only wanted on the workstation edition) |
 
 ---
 
