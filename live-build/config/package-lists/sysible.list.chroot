@@ -41,3 +41,6 @@ unattended-upgrades
 cloud-guest-utils
 # System message bus — required by many services and by systemd tooling.
 dbus
+# Headless split terminal (Ctrl+a prefix, plus F2/F3/F4 on the console). Listed
+# explicitly so it's always installed, not only via the generated toolkit list.
+tmux
