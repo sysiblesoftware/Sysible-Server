@@ -69,6 +69,28 @@ fi
 if [ -x /usr/share/sysible/scripts/fetch-third-party-keyrings.sh ]; then
     /usr/share/sysible/scripts/fetch-third-party-keyrings.sh
 fi
+
+# Provision the signing keys for the base-tool vendor repos that sysible-release
+# ships as .sources (Signed-By=/usr/share/keyrings/<vendor>.gpg). sysible-release
+# ships the .sources but NOT these keys, so without this every one of these repos
+# fails `apt-get update` with "repository is not signed" and the whole ISO build
+# dies. Each key is written to the exact path its .sources expects. FAIL CLOSED:
+# a base tool that can't be verified must not silently vanish from the image.
+echo "-- provisioning vendor apt signing keys --"
+fetch_key() {   # <url> <dest-keyring>
+    _t="$(mktemp)"
+    if $CURL "$1" -o "$_t"; then
+        gpg --dearmor < "$_t" > "$2" && chmod 0644 "$2" && echo "   keyring: $2"
+    else
+        echo "FATAL: could not fetch vendor signing key $1" >&2; rm -f "$_t"; exit 1
+    fi
+    rm -f "$_t"
+}
+fetch_key https://download.docker.com/linux/debian/gpg            /usr/share/keyrings/docker.gpg
+fetch_key https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key /usr/share/keyrings/kubernetes.gpg
+fetch_key https://packages.microsoft.com/keys/microsoft.asc       /usr/share/keyrings/microsoft.gpg
+fetch_key https://packages.cloud.google.com/apt/doc/apt-key.gpg   /usr/share/keyrings/google-cloud.gpg
+
 apt-get update
 
 # apt-installable vendor tools (docker-ce pulls cli/containerd as deps).
