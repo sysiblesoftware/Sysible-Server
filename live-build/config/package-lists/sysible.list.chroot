@@ -41,6 +41,11 @@ unattended-upgrades
 cloud-guest-utils
 # System message bus — required by many services and by systemd tooling.
 dbus
-# Headless split terminal (Ctrl+a prefix, plus F2/F3/F4 on the console). Listed
-# explicitly so it's always installed, not only via the generated toolkit list.
+# Headless split terminal (Ctrl+a prefix; F2/F3/F4 AND Ctrl+F1/F2/F4 on the
+# console — the latter via the console-splitkeys keymap). Listed explicitly so
+# it's always installed, not only via the generated toolkit list.
 tmux
+# loadkeys — loads the console keymap that makes Ctrl+F1/F2/F4 reach tmux at the
+# raw VT (sysible-console-splitkeys.service). Usually pulled in by console-setup,
+# listed explicitly so the split keys never silently break if that changes.
+kbd

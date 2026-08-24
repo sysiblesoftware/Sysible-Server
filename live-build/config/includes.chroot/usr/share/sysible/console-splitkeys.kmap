@@ -1,0 +1,23 @@
+# Sysible Server — make Ctrl+F1 / Ctrl+F2 / Ctrl+F4 work at the raw Linux console.
+#
+# WHY THIS EXISTS: the Linux virtual console (a physical / VM login at the getty,
+# not SSH) cannot deliver Ctrl+Fn to applications — the kernel keyboard driver has
+# no modified-key (CSI-u / modifyOtherKeys) protocol, so Ctrl+F1 is indistinguish-
+# able from F1 and tmux's `bind -n C-F1` never fires there. That is exactly why the
+# split-terminal hotkeys "didn't work" on the console.
+#
+# THE FIX: this incremental keymap makes Ctrl+F1/F2/F4 EMIT the precise xterm
+# escape sequences that tmux already binds for those keys (see /etc/tmux.conf), so
+# the same one-key splits work at the console as over SSH. loadkeys merges this on
+# top of the active keymap — it touches ONLY these three combinations, nothing else.
+#
+# CSI encoding: F1=P F2=Q F3=R F4=S ; modifier ";5" = Ctrl.  So Ctrl+F1 = ESC[1;5P.
+# Function-key keycodes: F1=59 F2=60 F3=61 F4=62.
+
+control keycode 59 = F200
+control keycode 60 = F201
+control keycode 62 = F202
+
+string F200 = "\033[1;5P"
+string F201 = "\033[1;5Q"
+string F202 = "\033[1;5S"

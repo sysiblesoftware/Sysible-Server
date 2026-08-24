@@ -1,0 +1,17 @@
+[Unit]
+Description=Sysible — enable Ctrl+F1/F2/F4 split-terminal keys on the Linux console
+Documentation=https://sysible.com
+# Run AFTER the console keymap is set up, so our incremental map isn't overwritten.
+After=systemd-vconsole-setup.service
+Wants=systemd-vconsole-setup.service
+# Only meaningful on a real console; harmless (loadkeys no-ops) in a container.
+ConditionPathExists=/usr/share/sysible/console-splitkeys.kmap
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# --- merges onto the active keymap; touches only Ctrl+F1/F2/F4 ---
+ExecStart=/usr/bin/loadkeys /usr/share/sysible/console-splitkeys.kmap
+
+[Install]
+WantedBy=multi-user.target

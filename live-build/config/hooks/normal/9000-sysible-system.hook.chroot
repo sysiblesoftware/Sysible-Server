@@ -71,6 +71,12 @@ fi
 chmod 0755 /usr/lib/sysible/branding-guard 2>/dev/null || true
 systemctl enable sysible-branding-guard.service 2>/dev/null || true
 
+# Console split-terminal keys: make Ctrl+F1/F2/F4 work at the RAW Linux console
+# (not just over SSH). The kernel VT can't deliver Ctrl+Fn to tmux, so a boot
+# oneshot loadkeys's an incremental keymap that emits the xterm sequences tmux
+# binds. See /usr/share/sysible/console-splitkeys.kmap and /etc/tmux.conf.
+systemctl enable sysible-console-splitkeys.service 2>/dev/null || true
+
 # Sysible AI shell helper: /etc/profile.d is only read by LOGIN shells, but
 # interactive non-login shells (e.g. an SSH session that re-sources) read
 # /etc/bash.bashrc. Source our helper from there too so `sai` and the
