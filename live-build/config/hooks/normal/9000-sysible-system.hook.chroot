@@ -75,7 +75,10 @@ systemctl enable sysible-branding-guard.service 2>/dev/null || true
 # (not just over SSH). The kernel VT can't deliver Ctrl+Fn to tmux, so a boot
 # oneshot loadkeys's an incremental keymap that emits the xterm sequences tmux
 # binds. See /usr/share/sysible/console-splitkeys.kmap and /etc/tmux.conf.
-systemctl enable sysible-console-splitkeys.service 2>/dev/null || true
+# Enabled by a verbatim multi-user.target.wants symlink shipped in includes.chroot
+# (like sysible-avatar) — so a `systemctl enable` that fails in the chroot can't
+# silently ship the service disabled. Assert it's present rather than create it.
+test -L /etc/systemd/system/multi-user.target.wants/sysible-console-splitkeys.service
 
 # Sysible AI shell helper: /etc/profile.d is only read by LOGIN shells, but
 # interactive non-login shells (e.g. an SSH session that re-sources) read
