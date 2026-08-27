@@ -6,18 +6,26 @@
 # able from F1 and tmux's `bind -n C-F1` never fires there. That is exactly why the
 # split-terminal hotkeys "didn't work" on the console.
 #
-# THE FIX: this incremental keymap makes Ctrl+F1/F2/F4 EMIT the precise xterm
-# escape sequences that tmux already binds for those keys (see /etc/tmux.conf), so
-# the same one-key splits work at the console as over SSH. loadkeys merges this on
-# top of the active keymap — it touches ONLY these three combinations, nothing else.
+# THE FIX (robust): make Ctrl+F1/F2/F4 emit tmux's PREFIX (Ctrl+a = \001) followed
+# by the split key. tmux reads those as literal bytes under ANY terminal, so the
+# splits work on the bare console.
 #
-# CSI encoding: F1=P F2=Q F3=R F4=S ; modifier ";5" = Ctrl.  So Ctrl+F1 = ESC[1;5P.
-# Function-key keycodes: F1=59 F2=60 F3=61 F4=62.
+# WHY NOT the xterm CSI sequences (ESC[1;5P …): at the raw console TERM=linux, and
+# tmux's `extended-keys` parsing is gated to xterm*/tmux*/screen* terminal-features —
+# it is NOT active for `linux`, so tmux would receive ESC[1;5P as literal bytes and
+# never decode it to C-F1. That was the long-standing "Ctrl+F1 doesn't work on the
+# console" bug. The prefix+key form below sidesteps terminal-feature negotiation
+# entirely and drives the same tmux splits directly.
+#   Ctrl+F1 → C-a |  (split left/right)   Ctrl+F2 → C-a -  (split top/bottom)
+#   Ctrl+F4 → C-a X  (kill pane, no-confirm; see `bind X kill-pane` in tmux.conf)
+#
+# loadkeys merges this on top of the active keymap — it touches ONLY these three
+# combinations, nothing else. Function-key keycodes: F1=59 F2=60 F3=61 F4=62.
 
 control keycode 59 = F200
 control keycode 60 = F201
 control keycode 62 = F202
 
-string F200 = "\033[1;5P"
-string F201 = "\033[1;5Q"
-string F202 = "\033[1;5S"
+string F200 = "\001|"
+string F201 = "\001-"
+string F202 = "\001X"
