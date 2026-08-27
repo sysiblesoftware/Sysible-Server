@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sysible-tools — install optional, separately-licensed tools on demand.
 #
-# Some tooling can't be baked into the Sysible Server image for LICENSING
+# Some tooling can't be baked into the Sysible Workstation image for LICENSING
 # reasons — most notably HashiCorp's products (Terraform, Vault, Consul, Nomad,
 # Packer, Boundary), which moved to the Business Source License (BUSL-1.1). The
 # ISO ships the open OpenTofu (`tofu`) in Terraform's place; this menu lets an
@@ -124,7 +124,7 @@ license_ack() {  # license_ack <space-separated ids> ; returns 0 to proceed
  LICENSE NOTICE
    These tools are distributed by HashiCorp under the Business
    Source License 1.1 (BUSL-1.1), NOT open source. They are not
-   shipped in the Sysible Server image for that reason. Installing
+   shipped in the Sysible Workstation image for that reason. Installing
    them means YOU accept HashiCorp's license terms:
        https://www.hashicorp.com/bsl
    Affected:$hc

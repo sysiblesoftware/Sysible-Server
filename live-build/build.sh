@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the Sysible Server ISO (headless, text-mode Debian Installer). Run on a
+# Build the Sysible Workstation ISO (headless, text-mode Debian Installer). Run on a
 # Debian host, or in a debian:bookworm container, with network access:  sudo ./build.sh
 #
 # Everything is baked in — nothing to install after first boot:
@@ -155,9 +155,9 @@ if [ -n "$ISO" ]; then
         python3 - "$WORK/grub.cfg" "$GTK_INITRD" <<'PY'
 import sys, re
 p = sys.argv[1]; s = open(p).read()
-s = re.sub(r'Live system \((.*?) fail-safe mode\)', r'Sysible Server (Live, safe graphics) [\1]', s)
-s = re.sub(r'Live system \((.*?)\)', r'Sysible Server (Live) [\1]', s)
-s = s.replace('Debian GNU/Linux', 'Sysible Server')
+s = re.sub(r'Live system \((.*?) fail-safe mode\)', r'Sysible Workstation (Live, safe graphics) [\1]', s)
+s = re.sub(r'Live system \((.*?)\)', r'Sysible Workstation (Live) [\1]', s)
+s = s.replace('Debian GNU/Linux', 'Sysible Workstation')
 # FIX: the graphical-installer entry points at /install/gtk/vmlinuz, which does
 # NOT exist. Debian's CD layout ships only the gtk INITRD in install/gtk/ and
 # shares the kernel at install/vmlinuz, so booting "Graphical install" dies with
@@ -188,12 +188,12 @@ if len(sys.argv) > 2 and sys.argv[2] != '1':
 if not re.search(r'(?m)^[^#\n]*\blinux\b[^\n]*/install[^\n]*vmlinuz', s):
     s += (
         '\n\n# --- Sysible installer entries (UEFI GRUB ships none by default) ---\n'
-        'menuentry "Install Sysible Server" --hotkey=i {\n'
+        'menuentry "Install Sysible Workstation" --hotkey=i {\n'
         '    set background_color=black\n'
         '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
         '    initrd /install/initrd.gz\n'
         '}\n'
-        'menuentry "Install Sysible Server (graphical)" {\n'
+        'menuentry "Install Sysible Workstation (graphical)" {\n'
         '    set background_color=black\n'
         '    linux  /install/gtk/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
         '    initrd /install/gtk/initrd.gz\n'
@@ -239,8 +239,8 @@ PY
             python3 - "$WORK/live.cfg" <<'PY'
 import sys, re
 p = sys.argv[1]; s = open(p).read()
-s = re.sub(r'(menu label \^?)Live system \((.*?) fail-safe mode\)', r'\1Sysible Server (Live, safe) [\2]', s)
-s = re.sub(r'(menu label \^?)Live system \((.*?)\)', r'\1Sysible Server (Live) [\2]', s)
+s = re.sub(r'(menu label \^?)Live system \((.*?) fail-safe mode\)', r'\1Sysible Workstation (Live, safe) [\2]', s)
+s = re.sub(r'(menu label \^?)Live system \((.*?)\)', r'\1Sysible Workstation (Live) [\2]', s)
 open(p, 'w').write(s)
 PY
             MAP_LIVE="-map $WORK/live.cfg /isolinux/live.cfg"

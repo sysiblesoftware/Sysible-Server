@@ -91,8 +91,8 @@ a helper command) can pull the originals from the vendor on request — Sysible
 never re-hosts these binaries, so the license grant is between you and the
 vendor, initiated by you.
 
-> Note: **Sysible Server is headless** — it uses the Debian text installer, which
-> has no graphical "Optional apps" page (that page exists only on the Sysible Linux
+> Note: **Sysible Workstation is headless** — it uses the Debian text installer, which
+> has no graphical "Optional apps" page (that page exists only on the Sysible Workstation
 > **workstation** edition). On the server, install any of the originals below
 > yourself after install by adding the vendor's apt repository and `apt install`-ing
 > the package.

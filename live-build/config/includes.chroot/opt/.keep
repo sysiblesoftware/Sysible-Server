@@ -1,4 +1,4 @@
-# Guarantee /opt exists (root-writable, 0755) on the installed Sysible Server.
+# Guarantee /opt exists (root-writable, 0755) on the installed Sysible Workstation.
 #
 # base-files ships /opt, but an EMPTY directory can be dropped when the live
 # filesystem is squashed and copied to the target by the live installer —

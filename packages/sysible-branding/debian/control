@@ -8,9 +8,9 @@ Standards-Version: 4.6.2
 Package: sysible-branding
 Architecture: all
 Depends: ${misc:Depends}
-Description: Sysible Server visual branding (SES)
+Description: Sysible Workstation visual branding (SES)
  The SES brand assets that are not otherwise packaged: the GRUB boot theme and the
  Sora brand font. Installing or upgrading this package re-applies the current brand
  to the running system (regenerates the GRUB menu and refreshes the font cache), so
- branding updates arrive over apt without a reinstall. Headless Sysible Server ships
+ branding updates arrive over apt without a reinstall. Headless Sysible Workstation ships
  no desktop, so the GDM login background and application icons are omitted.

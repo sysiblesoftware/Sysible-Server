@@ -1,4 +1,4 @@
-# Sysible Server — offer the optional / external software menu on first login.
+# Sysible Workstation — offer the optional / external software menu on first login.
 #
 # Some tooling can't be baked into the distributed image for LICENSING reasons
 # (HashiCorp's BUSL products, the AWS CLI installer, etc.), so `sysible-tools`
@@ -20,7 +20,7 @@ if [ -z "$SYSIBLE_NO_FIRSTRUN" ] && [ -z "$TMUX" ] && command -v sysible-tools >
         if [ ! -e "$_sysible_mark" ]; then
           mkdir -p "$(dirname "$_sysible_mark")" 2>/dev/null || true
           : > "$_sysible_mark" 2>/dev/null || true
-          printf '\n\033[1;32mWelcome to Sysible Server.\033[0m\n'
+          printf '\n\033[1;32mWelcome to Sysible Workstation.\033[0m\n'
           printf 'Optional / external software (Terraform, Vault, Consul, Nomad, Packer,\n'
           printf 'Boundary, AWS CLI) is NOT installed by default — for licensing reasons the\n'
           printf 'choice is yours. OpenTofu (tofu), gcloud and the Azure CLI already ship.\n\n'

@@ -1,4 +1,4 @@
-# Sysible Server — make Ctrl+F1 / Ctrl+F2 / Ctrl+F4 work at the raw Linux console.
+# Sysible Workstation — make Ctrl+F1 / Ctrl+F2 / Ctrl+F4 work at the raw Linux console.
 #
 # WHY THIS EXISTS: the Linux virtual console (a physical / VM login at the getty,
 # not SSH) cannot deliver Ctrl+Fn to applications — the kernel keyboard driver has

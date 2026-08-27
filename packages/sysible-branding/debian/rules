@@ -10,7 +10,7 @@ override_dh_auto_build:
 override_dh_auto_install:
 	# GRUB boot theme — the Sysible green boot menu, the only branding a headless
 	# server renders. The GDM login/lock background, the desktop app icons and the
-	# pixmaps were removed with the GUI (Sysible Server has no desktop).
+	# pixmaps were removed with the GUI (Sysible Workstation has no desktop).
 	install -d $(D)/boot/grub/themes
 	cp -a $(CH)/boot/grub/themes/sysible $(D)/boot/grub/themes/
 	# Sora brand font

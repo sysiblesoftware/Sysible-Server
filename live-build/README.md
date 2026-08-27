@@ -1,4 +1,4 @@
-# Sysible Server — ISO (live-build)
+# Sysible Workstation — ISO (live-build)
 
 Builds a bootable headless server ISO with the Sysible toolkit preinstalled and
 the standard text-mode Debian Installer for install-to-disk.

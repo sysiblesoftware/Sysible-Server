@@ -1,4 +1,4 @@
-# Sysible Server is an engineering/admin server — expose the sbin dirs
+# Sysible Workstation is an engineering/admin server — expose the sbin dirs
 # (ifconfig, route, ethtool, etc.) on every user's PATH.
 case ":$PATH:" in
     *:/usr/sbin:*) ;;

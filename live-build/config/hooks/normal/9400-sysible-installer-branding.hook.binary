@@ -42,7 +42,7 @@ PRESEED="${SYSIBLE_PRESEED:-}"
 command -v cpio >/dev/null 2>&1 || { echo "sysible-installer: cpio unavailable — skipping." >&2; exit 0; }
 
 SYSIBLE_GTKRC='
-# --- Sysible Server brand palette (appended last, highest priority) --------
+# --- Sysible Workstation brand palette (appended last, highest priority) --------
 style "sysible-brand" {
     bg[NORMAL]        = "#0f1620"
     bg[PRELIGHT]      = "#1f9d55"
