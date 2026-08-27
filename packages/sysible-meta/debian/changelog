@@ -1,6 +1,6 @@
 sysible-meta (0.2.0) sysible; urgency=medium
 
-  * Server edition: this repo now builds the `sysible-server` metapackage — the
+  * Server edition: this repo now builds the `sysible-workstation` metapackage — the
     Sysible Workstation toolset minus the GUI (no sysible-desktop-gnome, no
     GNOME/Calamares, no desktop apps). Headless server, installed via the
     text-mode Debian Installer.

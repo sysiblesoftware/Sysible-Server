@@ -49,7 +49,7 @@ cp "$ROOT"/dist/*.deb config/packages.chroot/ 2>/dev/null || true
 echo "Included $(ls config/packages.chroot/*.deb 2>/dev/null | wc -l) Sysible package(s) directly."
 
 # --- expand the metapackage into the Debian-native toolkit -----------------
-# Every package in sysible-server's Depends/Recommends/Suggests EXCEPT the
+# Every package in sysible-workstation's Depends/Recommends/Suggests EXCEPT the
 # sysible-* ones (included directly), systerm (its own repo), the vendor /
 # GitHub-binary tools (installed by the hook, since they aren't in Debian), and
 # the GUI/desktop packages (this is a HEADLESS server image — no GNOME, no

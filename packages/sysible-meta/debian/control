@@ -7,7 +7,7 @@ Standards-Version: 4.6.2
 Homepage: https://sysible.com
 Rules-Requires-Root: no
 
-Package: sysible-server
+Package: sysible-workstation
 Architecture: all
 Multi-Arch: foreign
 Depends: ${misc:Depends},
