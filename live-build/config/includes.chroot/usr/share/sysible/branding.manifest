@@ -1,14 +1,14 @@
 # sysible branding manifest — sha256 of the canonical marks + every
 # generated asset. Regenerate with: python3 branding/render-branding.py
-7c7df434c6b28ae75f1a3b67f072e47c9c69484ad6dab8e1e280a041de5796c9  branding/logo/sysible-mark.svg
+fffe572e0b3c20ef9e15761c758f7038478564e242eaeebff7430720f4b172db  branding/logo/sysible-mark.svg
 a81f1938ad8589d89c6af1392efd67bd1ba2c6fe73c9316f0dbb484000db717c  branding/logo/sysible-controller-mark.svg
-ccd1e83c90b1123f2c64bf159c773aa0d8002427bc9506828b0d876e804b6538  live-build/config/includes.chroot/boot/grub/themes/sysible/logo.png
-7c2f524e946a6249a506abaeb3e4dd5713680a16db00af520a6c4b035bba7040  live-build/config/includes.chroot/boot/grub/themes/sysible/background.png
-ccca6c2d77f21981532afbcbeea323c15f5cffe27374aa96e671e5d8f9d3f426  live-build/config/branding/splash.png
-508e76b8fa3642d96c71565305ede87f3fc12b753dd36dc2dd61ee75a9c158d5  live-build/config/bootloaders/isolinux/splash.png
-a6e41e30a83085a87a409a49b51b79855bc90a258898275c2252590255a3830a  live-build/config/binary_grub/splash.tga
-cf5a3f38406972d9adb2fda9373be60f5a35d54ec4eda214d14d1da79aca77bb  .github/sysible-logo-dark.png
-2acebeafd2786a57adc464c373af830b571f8c36653063d36833387329a01342  .github/sysible-logo-light.png
+20ccbf2cb7a9146ae7cef27cd5acdc1c8f99643745067fb079bc22e065a18a97  live-build/config/includes.chroot/boot/grub/themes/sysible/logo.png
+6b2c0e5ef4a544e1dbc6d59e461d425be889ac2e59193b519abe2a9bd762355e  live-build/config/includes.chroot/boot/grub/themes/sysible/background.png
+865907e1e81bde1f5042bede15ea6c07afd2807553c5a100c265b8e22528388f  live-build/config/branding/splash.png
+8d8cc411025260bdfd2f60cee5ea6c2d19cc0cec6da060412d348275c7f29104  live-build/config/bootloaders/isolinux/splash.png
+eced29fa27407e1de68cf1459af697b668f600a1eec473fb9012a76efec4d747  live-build/config/binary_grub/splash.tga
+e0e540f123091ce23776954521924e2e59237a9d0a0b5d74de25efef061b763e  .github/sysible-logo-dark.png
+7dc08c4117e5d4eaf873caa242514c875b0f862837c9dbb064ec86a088ad0f76  .github/sysible-logo-light.png
 6a656b5daf1cfbb9e3203cd56a5d58a21fbc33b365b5ba271e9d7f8e5db7d2fd  branding/social/github-avatar.png
 ee60b9485c7122eb3d570b6add3fe11a49c096cca66300a238e42d4e2fb44c3a  branding/social/twitter-avatar.png
 e8fd59b366d6fccd5403ed88f003e60f584531c4a53867b985306e90dbf01167  branding/social/controller-avatar.png
