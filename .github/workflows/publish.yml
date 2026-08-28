@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]        # -> sysible-dev
     tags: ['v*']            # -> sysible-stable
+  workflow_dispatch:        # re-publish on demand (e.g. to refresh the repo + purge the CDN)
+    inputs:
+      suite:
+        description: 'Which suite to (re)publish'
+        type: choice
+        options: [dev, stable]
+        default: stable
 
 # Least privilege: this job only reads the repo and pushes to R2 (not to GitHub),
 # so the GITHUB_TOKEN needs no write scope.
@@ -95,8 +102,14 @@ jobs:
 
       - name: Select suite
         id: suite
+        env:
+          DISPATCH_SUITE: ${{ github.event.inputs.suite }}
         run: |
-          if [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+          # A manual re-publish (workflow_dispatch) picks its suite explicitly;
+          # otherwise a tag -> stable, a branch push -> dev.
+          if [ -n "$DISPATCH_SUITE" ]; then
+            echo "name=sysible-$DISPATCH_SUITE" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
             echo "name=sysible-stable" >> "$GITHUB_OUTPUT"
           else
             echo "name=sysible-dev" >> "$GITHUB_OUTPUT"
