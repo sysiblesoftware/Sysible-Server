@@ -1,0 +1,16 @@
+Template: sysible/tools
+Type: multiselect
+Choices: terraform, vault, consul, nomad, packer, boundary, aws-cli
+Default:
+Description: Optional software to install
+ These tools are NOT bundled in the Sysible Workstation image, so they are
+ offered here as a choice. HashiCorp's tools (terraform, vault, consul, nomad,
+ packer, boundary) are BUSL-1.1 licensed, not open source; selecting them means
+ you accept HashiCorp's licence (https://www.hashicorp.com/bsl). aws-cli is
+ installed from Amazon's official channel.
+ .
+ Anything you select is installed automatically the first time this system boots
+ with a working network connection. OpenTofu (the open Terraform drop-in),
+ gcloud, the Azure CLI, Docker, kubectl, Helm and Ansible are already included.
+ .
+ You can add or remove these tools at any time later with:  sudo sysible-tools

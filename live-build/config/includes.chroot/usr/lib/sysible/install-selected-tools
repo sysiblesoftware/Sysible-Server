@@ -1,0 +1,43 @@
+#!/bin/sh
+# Sysible Workstation — first-boot install of the optional tools the operator
+# chose DURING the Debian install.
+#
+# The installer wrote the selection to /etc/sysible/tools.wanted (see
+# preseed.cfg early_command + sysible-ask-tools). This runs once, on the first
+# networked boot, installs those tools via `sysible-tools`, then removes the
+# selection file so it never runs again. Driven by sysible-tools-firstboot.service.
+set -e
+WANT=/etc/sysible/tools.wanted
+LOG=/var/log/sysible-tools-firstboot.log
+
+# Nothing requested -> nothing to do (service Condition also gates this).
+[ -s "$WANT" ] || exit 0
+
+exec >>"$LOG" 2>&1
+echo "=== sysible-tools first-boot install: $(date -u 2>/dev/null) ==="
+ids=$(tr '\n' ' ' < "$WANT" | tr -s ' ')
+# Trim leading/trailing spaces.
+ids=$(printf '%s' "$ids" | sed -e 's/^ *//' -e 's/ *$//')
+echo "selected during install: [$ids]"
+
+if [ -z "$ids" ]; then
+  echo "empty selection — nothing to install"
+  rm -f "$WANT"
+  echo "=== done ==="
+  exit 0
+fi
+
+if command -v sysible-tools >/dev/null 2>&1; then
+  # The operator already picked and accepted these in the installer (the debconf
+  # prompt carries the same BUSL-1.1 wording), so accept non-interactively here.
+  SYSIBLE_TOOLS_ASSUME_YES=1 sysible-tools install $ids \
+    || echo "WARNING: one or more installs failed (see output above)"
+else
+  echo "ERROR: sysible-tools not found on PATH"
+fi
+
+# Consume the request unconditionally so we never re-run — even if a download
+# failed, we don't want to retry on every boot. Re-run manually with sysible-tools.
+rm -f "$WANT"
+echo "=== done ==="
+exit 0

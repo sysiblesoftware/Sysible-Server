@@ -1,0 +1,36 @@
+#!/bin/sh
+# Sysible Workstation — ask which optional/licensed tools to add, DURING the
+# Debian install and BEFORE the base system is laid down.
+#
+# Run from preseed/early_command (which executes right after the preseed is read,
+# before partitioning and base-installer). We show a debconf multiselect; the
+# answer is stashed in the installer's ramdisk at /tmp/sysible-tools.wanted.
+# preseed/late_command then copies it into the target as /etc/sysible/tools.wanted,
+# and the sysible-tools-firstboot.service oneshot installs the picks on first boot.
+#
+# Everything is guarded so a debconf hiccup can NEVER fail an otherwise-good
+# install: worst case nothing is preselected and the operator uses `sysible-tools`
+# after boot, exactly as before.
+set -e
+. /usr/share/debconf/confmodule
+
+# The template ships on the ISO root next to preseed.cfg (config/includes.binary/).
+# /cdrom is the normal mount; /hd-media covers USB-image installs.
+for T in /cdrom/sysible-tools.templates /hd-media/sysible-tools.templates; do
+  if [ -f "$T" ]; then
+    debconf-loadtemplate sysible "$T" 2>/dev/null || true
+    break
+  fi
+done
+
+# critical priority so the question is shown even on an otherwise high-priority /
+# mostly-preseeded install. If the template failed to load, db_input just no-ops.
+db_input critical sysible/tools 2>/dev/null || true
+db_go 2>/dev/null || true
+
+RET=
+db_get sysible/tools 2>/dev/null || RET=
+# db_get yields comma+space separated ids ("vault, consul"); normalise to a plain
+# space-separated list the first-boot installer can pass straight to sysible-tools.
+printf '%s' "${RET:-}" | tr -d ' ' | tr ',' ' ' > /tmp/sysible-tools.wanted 2>/dev/null || true
+exit 0

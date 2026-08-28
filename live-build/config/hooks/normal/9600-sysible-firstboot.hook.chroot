@@ -13,3 +13,12 @@ chmod 0755 /usr/lib/sysible/regenerate-ssh-host-keys 2>/dev/null || true
 systemctl enable sysible-regenerate-ssh-host-keys.service 2>/dev/null || true
 rm -f /etc/ssh/ssh_host_*key /etc/ssh/ssh_host_*key.pub 2>/dev/null || true
 echo "sysible-firstboot: stripped baked SSH host keys; first-boot regen enabled"
+
+# --- install operator-selected optional tools on first boot ----------------
+# The Debian installer asks which optional/licensed tools to add (preseed
+# early_command -> /cdrom/sysible-ask-tools) and records the choice in the
+# target at /etc/sysible/tools.wanted (via late_command). This oneshot installs
+# them on the first networked boot and then removes the marker so it runs once.
+chmod 0755 /usr/lib/sysible/install-selected-tools 2>/dev/null || true
+systemctl enable sysible-tools-firstboot.service 2>/dev/null || true
+echo "sysible-firstboot: enabled first-boot install of installer-selected tools"

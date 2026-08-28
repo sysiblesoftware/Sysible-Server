@@ -1,0 +1,18 @@
+[Unit]
+Description=Install operator-selected optional tools on first boot
+Documentation=https://sysible.com
+# Only when the installer recorded a selection. install-selected-tools deletes
+# the file when finished, so this is a one-shot on the first networked boot and
+# is skipped on every boot thereafter.
+ConditionPathExists=/etc/sysible/tools.wanted
+# The tools download from vendor repos, so wait for the network to be up.
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/sysible/install-selected-tools
+
+[Install]
+WantedBy=multi-user.target
