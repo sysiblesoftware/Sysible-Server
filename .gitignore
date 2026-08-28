@@ -1,0 +1,28 @@
+# Python bytecode caches (these had been committed by accident — no root
+# .gitignore existed; the render scripts and the sysible-cli package generate them).
+__pycache__/
+*.py[cod]
+
+# Debian packaging build output (packages/*/ build via dpkg-buildpackage / pybuild).
+*.deb
+*.buildinfo
+*.changes
+.pybuild/
+debian/.debhelper/
+debian/*.substvars
+debian/files
+
+# live-build working output — never commit the built ISO, chroot, or binary tree.
+*.iso
+*.img
+/chroot/
+/binary/
+/.build/
+/cache/
+live-build/config/binary/
+live-build/config/chroot/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*~
