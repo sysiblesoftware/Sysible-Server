@@ -39,6 +39,34 @@ CATALOG=(
 # HashiCorp ids are BUSL-1.1 and share the apt path + license gate.
 HASHICORP_IDS=" terraform vault consul nomad packer boundary "
 
+# ---- Sysible-green whiptail/newt theme -----------------------------------
+# whiptail reads NEWT_COLORS for its palette. Without it the menu is the stock
+# blue-and-red "awful" default; this dresses it in Sysible green so the picker
+# matches the rest of the workstation (status bar, boot splash, wallpapers).
+export NEWT_COLORS='
+root=,black
+window=,black
+border=green,black
+title=green,black
+button=black,green
+compactbutton=green,black
+actbutton=black,green
+checkbox=white,black
+actcheckbox=black,green
+entry=white,black
+label=green,black
+listbox=white,black
+actlistbox=black,green
+sellistbox=black,green
+textbox=white,black
+acttextbox=black,green
+roottext=green,black
+emptyscale=,black
+fullscale=,green
+helpline=green,black
+'
+BACKTITLE="Sysible Workstation  ·  optional software"
+
 # ---- helpers -------------------------------------------------------------
 field() { printf '%s' "$1" | cut -d'|' -f"$2"; }
 
@@ -210,9 +238,10 @@ menu() {
 
   if command -v whiptail >/dev/null 2>&1 && [ -t 0 ] && [ -t 1 ]; then
     local picked
-    picked="$(whiptail --title "Sysible — install optional tools" \
-      --checklist "Select tools to install (SPACE toggles, ENTER confirms).\nHashiCorp tools are BUSL-1.1 licensed — you'll be asked to accept." \
-      20 78 10 "${choices[@]}" 3>&1 1>&2 2>&3)" || { echo "Cancelled."; exit 0; }
+    picked="$(whiptail --backtitle "$BACKTITLE" \
+      --title " Optional software " \
+      --checklist "\nThese tools are NOT bundled in the image — HashiCorp's are BUSL-1.1\nlicensed, AWS CLI ships from Amazon's own installer. Pick what to add:\n\n  [SPACE] toggle    [TAB] to buttons    [ENTER] confirm\n" \
+      20 82 8 "${choices[@]}" 3>&1 1>&2 2>&3)" || { echo "Cancelled."; exit 0; }
     # whiptail returns space-separated, quote-wrapped ids
     picked="$(printf '%s' "$picked" | tr -d '"')"
     [ -z "$picked" ] && { echo "Nothing selected."; exit 0; }
