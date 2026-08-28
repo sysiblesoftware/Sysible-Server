@@ -29,7 +29,8 @@ cat > /etc/motd <<'MOTD'
 
 Sysible Workstation — engineering & automation platform
 Docs: https://sysible.com
-Optional licensed tools (Terraform, Vault, Consul, …):  sudo sysible-tools
+Install the Sysible platform (Controller, SLEP, Connect):  sudo install-sysible
+Optional licensed tools (Terraform, Vault, Consul, …):     sudo sysible-tools
 
 MOTD
 chmod -x /etc/update-motd.d/10-uname 2>/dev/null || true
