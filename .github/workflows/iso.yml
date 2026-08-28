@@ -57,6 +57,17 @@ jobs:
           cd live-build
           ./build.sh
 
+      - name: Name the ISO
+        # live-build emits a generic live-image-<arch>.hybrid.iso; rename it to the
+        # product name so the artifact, the release parts, and the file a user
+        # downloads are all sysible-server-<arch>.iso (not the generic live image).
+        run: |
+          cd live-build
+          iso=$(ls *.iso | head -1)
+          out="sysible-server-${SYSIBLE_ARCH}.iso"
+          [ "$iso" = "$out" ] || mv -v "$iso" "$out"
+          ls -lh "$out"
+
       - name: Show result
         run: ls -lh live-build/*.iso
 
@@ -181,7 +192,7 @@ jobs:
             ```sh
             gpg --verify SHA256SUMS.<arch>.parts.gpg SHA256SUMS.<arch>.parts  # authenticity
             sha256sum -c SHA256SUMS.<arch>.parts   # verify the parts
-            cat live-image-<arch>.hybrid.iso.*.part > live-image-<arch>.hybrid.iso
+            cat sysible-server-<arch>.iso.*.part > sysible-server-<arch>.iso
             gpg --verify SHA256SUMS.<arch>.gpg SHA256SUMS.<arch>              # authenticity
             sha256sum -c SHA256SUMS.<arch>          # verify the whole ISO
             ```
