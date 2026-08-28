@@ -11,8 +11,19 @@
 # Everything is guarded so a debconf hiccup can NEVER fail an otherwise-good
 # install: worst case nothing is preselected and the operator uses `sysible-tools`
 # after boot, exactly as before.
-set -e
-. /usr/share/debconf/confmodule
+#
+# NO `set -e` here — on purpose. This runs from d-i's preseed/early_command, where
+# ANY non-zero exit aborts the install with a "Failed to run preseeded command"
+# dialog. debconf's confmodule and the db_* commands routinely return non-zero as
+# NORMAL control flow (a skipped question, an unset value, a template that didn't
+# load), so `set -e` here turned a harmless debconf hiccup into a failed install.
+# We run best-effort and force `exit 0` at the very end instead.
+if [ ! -r /usr/share/debconf/confmodule ]; then
+  # No debconf available this early — skip the prompt, never fail the install.
+  : > /tmp/sysible-tools.wanted 2>/dev/null || true
+  exit 0
+fi
+. /usr/share/debconf/confmodule 2>/dev/null || exit 0
 
 # The template ships on the ISO root next to preseed.cfg (config/includes.binary/).
 # /cdrom is the normal mount; /hd-media covers USB-image installs.
