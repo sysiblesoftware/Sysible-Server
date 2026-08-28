@@ -1,4 +1,4 @@
-# Sysible Workstation — auto-start tmux for interactive logins.
+# Sysible Server — auto-start tmux for interactive logins.
 #
 # The split-terminal keys (Ctrl+F1 etc., see /etc/tmux.conf) only do anything
 # INSIDE tmux. On a headless server you'd otherwise land at a bare shell and the

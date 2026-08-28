@@ -7,7 +7,7 @@ Standards-Version: 4.6.2
 Homepage: https://sysible.com
 Rules-Requires-Root: no
 
-Package: sysible-workstation
+Package: sysible-server
 Architecture: all
 Multi-Arch: foreign
 Depends: ${misc:Depends},
@@ -38,7 +38,7 @@ Depends: ${misc:Depends},
  podman, buildah, skopeo,
 Recommends:
 # Heavier pieces — installed by default, removable with --no-install-recommends.
-# This is the Sysible Workstation toolset MINUS the GUI: no GNOME/Calamares, no
+# This is the Sysible Server toolset MINUS the GUI: no GNOME/Calamares, no
 # desktop apps (VSCodium, Wireshark, virt-manager, LibreOffice, CherryTree,
 # SysTerm), no open-vm-tools-desktop — only the headless server pieces remain.
 # VM guest integration (folder sharing etc. sans the desktop bits).
@@ -65,10 +65,10 @@ Recommends:
 Suggests:
  azure-cli, google-cloud-cli,
  sysible-controller, sysible-agent,
-Description: Sysible Workstation — headless engineering platform (all-in-one)
- Turns a Debian base into the Sysible Workstation: the tools a Linux/DevOps/SRE/platform
+Description: Sysible Server — headless engineering platform (all-in-one)
+ Turns a Debian base into the Sysible Server: the tools a Linux/DevOps/SRE/platform
  engineer reaches for, installed and ready on first boot, so there is no half-hour
- of apt after every fresh install — the same toolset as Sysible Workstation but
+ of apt after every fresh install — the same toolset as Sysible Server but
  headless (no GNOME desktop, no Calamares, no GUI applications).
  .
  Depends carries the must-haves (shell, networking, containers via podman, the

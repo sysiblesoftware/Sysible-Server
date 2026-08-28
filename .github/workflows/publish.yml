@@ -14,7 +14,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     # Never run on forks; only publish from the canonical repo.
-    if: github.repository == 'sysiblesoftware/Sysible-Linux'
+    if: github.repository == 'sysiblesoftware/sysible-server'
     env:
       # aptly publishes to a local dir; a later step `aws s3 sync`s it to R2.
       # (aptly's native S3 publish emits an x-amz-acl header R2 rejects with 501.)

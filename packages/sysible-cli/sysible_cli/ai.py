@@ -29,7 +29,7 @@ DEFAULT_MODEL = "qwen2.5-coder:7b"
 
 SYSTEM_PROMPT = (
     "You are Sysible AI, a terse Linux troubleshooting assistant built into Sysible "
-    "Linux (a Debian-based engineering workstation; package manager is apt). You are "
+    "Linux (a Debian-based engineering server; package manager is apt). You are "
     "given a shell command, its exit code, and its output. Respond in this shape, and "
     "keep it tight:\n"
     "1. **Cause** — one or two sentences on what actually went wrong.\n"
@@ -193,9 +193,9 @@ def _distro():
             kv = dict(
                 line.rstrip().split("=", 1) for line in f if "=" in line
             )
-        return kv.get("PRETTY_NAME", "").strip('"') or "Sysible Workstation"
+        return kv.get("PRETTY_NAME", "").strip('"') or "Sysible Server"
     except OSError:
-        return "Sysible Workstation"
+        return "Sysible Server"
 
 
 def _trim(text, max_chars=6000):

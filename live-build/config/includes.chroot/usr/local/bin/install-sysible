@@ -1,7 +1,7 @@
 #!/bin/sh
 # install-sysible — install the Sysible CE stack (Controller, SLEP, Connect) on a
-# Sysible Workstation, on demand. Nothing about the platform is baked into the ISO
-# except this helper, so a fresh workstation runs no Sysible services and opens no
+# Sysible Server, on demand. Nothing about the platform is baked into the ISO
+# except this helper, so a fresh server runs no Sysible services and opens no
 # ports until you choose to install them.
 #
 # Each product is cloned to /opt/sysible-src/<repo> and brought up as a container
@@ -36,7 +36,7 @@ say()  { printf '%s\n' "$*"; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || exec sudo -- "$0" "$@"
-command -v git >/dev/null 2>&1 || die "git is required (it ships on the workstation — check your PATH)."
+command -v git >/dev/null 2>&1 || die "git is required (it ships on the server — check your PATH)."
 command -v docker >/dev/null 2>&1 || die "docker is required. Install Docker Engine + the compose plugin, then re-run."
 
 # ---- choose which builds to install --------------------------------------
@@ -50,8 +50,8 @@ if [ "$#" -gt 0 ]; then
     esac
   done
 elif command -v whiptail >/dev/null 2>&1 && [ -t 0 ] && [ -t 1 ]; then
-  CHOICE="$(whiptail --backtitle "Sysible Workstation" --title " Install Sysible CE " \
-    --checklist "\nPick the Sysible builds to install on this workstation.\nEach runs as a container; manage them later with 'sysible_ctl'.\n\n  [SPACE] toggle   [TAB] to buttons   [ENTER] confirm\n" \
+  CHOICE="$(whiptail --backtitle "Sysible Server" --title " Install Sysible CE " \
+    --checklist "\nPick the Sysible builds to install on this server.\nEach runs as a container; manage them later with 'sysible_ctl'.\n\n  [SPACE] toggle   [TAB] to buttons   [ENTER] confirm\n" \
     16 74 3 \
     controller "Sysible Controller — fleet management console" on \
     slep       "Sysible LEP — infra automation (Terraform/Ansible/Salt)" on \

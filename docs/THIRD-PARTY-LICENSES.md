@@ -1,13 +1,13 @@
-# Sysible Workstation — third-party licenses & written offer for source
+# Sysible Server — third-party licenses & written offer for source
 
-Sysible Workstation is a Debian-based live/installable system: an aggregate of many
+Sysible Server is a Debian-based live/installable system: an aggregate of many
 independent programs, each under its own license. This document (a) makes the
 GPL/LGPL written offer for corresponding source code, (b) lists the non-Debian
 components Sysible bundles and their licenses, and (c) records the software
 Sysible deliberately does **not** ship and why.
 
 _A copy of this file ships on every installed system at
-`/usr/share/doc/sysible-linux/THIRD-PARTY-LICENSES.md`._
+`/usr/share/doc/sysible-server/THIRD-PARTY-LICENSES.md`._
 
 ---
 
@@ -21,7 +21,7 @@ carries its own license and copyright in
 ## 2. Written offer for corresponding source (GPL/LGPL/MPL §3)
 
 For any GPL-, LGPL-, MPL-, or other copyleft-licensed binary distributed as part
-of a Sysible Workstation ISO, we make the following offer, **valid for three (3) years
+of a Sysible Server ISO, we make the following offer, **valid for three (3) years
 from the date you received the image**:
 
 > You may obtain the complete corresponding source code for any copyleft
@@ -34,7 +34,7 @@ from the date you received the image**:
 >    version.
 > 2. **Sysible source** — for Sysible's own packages and for the build
 >    definition of the image itself, see
->    <https://github.com/sysiblesoftware/Sysible-Linux> and the other
+>    <https://github.com/sysiblesoftware/sysible-server> and the other
 >    repositories under <https://github.com/sysiblesoftware>.
 > 3. **By request** — if you cannot retrieve a specific component's source by
 >    (1) or (2), email **source@sysible.com** with the release tag (e.g.
@@ -59,16 +59,11 @@ own full license text in its package or upstream repository.
 | eza (`eza`) | MIT | https://github.com/eza-community/eza |
 | PowerShell (`powershell`) | MIT | https://github.com/PowerShell/PowerShell |
 | Ollama (`ollama`) | MIT | https://github.com/ollama/ollama |
-| VSCodium (`codium`) | MIT | https://github.com/VSCodium/vscodium |
-| CherryTree (`cherrytree`) | GPL-3.0 | https://github.com/giuspen/cherrytree |
 | Azure CLI (`azure-cli`) | MIT | https://github.com/Azure/azure-cli |
 | Google Cloud CLI (`google-cloud-cli`) | Apache-2.0 (Cloud SDK Terms of Service) | https://cloud.google.com/sdk |
-| Firefox ESR (`firefox-esr`) | MPL-2.0 | https://www.mozilla.org/firefox/ |
-| LibreOffice (`libreoffice-*`) | MPL-2.0 / LGPL-3.0+ | https://www.libreoffice.org |
 
-VSCodium is the MIT-licensed (Code-OSS) build of VS Code — Microsoft's branded
-`code` build is proprietary and is **not** shipped (see §6). OpenTofu is the
-MPL-2.0 open fork that replaces HashiCorp Terraform (BUSL 1.1, not shipped).
+Sysible Server is headless: no desktop/GUI applications are bundled. OpenTofu is
+the MPL-2.0 open fork that replaces HashiCorp Terraform (BUSL 1.1, not shipped).
 
 ## 4. Fonts
 
@@ -80,28 +75,20 @@ MPL-2.0 open fork that replaces HashiCorp Terraform (BUSL 1.1, not shipped).
 
 | Component | Terms |
 |-----------|-------|
-| `sysible-*` packages (meta, release, cli, desktop, branding, artwork), the live-build definition, SysTerm, and the Sysible Controller CE installer | See each component's `debian/copyright` / repository `LICENSE` under https://github.com/sysiblesoftware |
-| Sysible branding, logos, name, GRUB/Plymouth themes, wallpapers | Sysible trademarks & artwork. Redistributing the OS is permitted; the Sysible marks may not be reused to brand other products. |
+| `sysible-*` packages (meta, release, cli, branding, artwork), the live-build definition, and the Sysible Controller CE installer | See each component's `debian/copyright` / repository `LICENSE` under https://github.com/sysiblesoftware |
+| Sysible branding, logos, name, and GRUB boot-menu theme | Sysible trademarks & artwork. Redistributing the OS is permitted; the Sysible marks may not be reused to brand other products. |
 
 ## 6. Software deliberately NOT shipped (and why)
 
 To keep the ISO cleanly redistributable, the following are **not** bundled. Open
-equivalents ship in their place, and the installer's **Optional apps** page (or
-a helper command) can pull the originals from the vendor on request — Sysible
-never re-hosts these binaries, so the license grant is between you and the
-vendor, initiated by you.
+equivalents ship in their place where one exists; Sysible never re-hosts these
+binaries, so the license grant is between you and the vendor, initiated by you
+when you install the original from its own apt repo.
 
-> Note: **Sysible Workstation is headless** — it uses the Debian text installer, which
-> has no graphical "Optional apps" page (that page exists only on the Sysible Workstation
-> **workstation** edition). On the server, install any of the originals below
-> yourself after install by adding the vendor's apt repository and `apt install`-ing
-> the package.
-
-| Not shipped | Reason | Shipped instead | How to get the original (post-install) |
-|-------------|--------|-----------------|----------------------------------------|
-| Terraform | BUSL 1.1 (source-available, not FOSS) | **OpenTofu** (MPL-2.0) | Add `apt.releases.hashicorp.com` and `apt install terraform` |
-| Packer | BUSL 1.1 | _none (no mainstream open fork)_ | Add `apt.releases.hashicorp.com` and `apt install packer` |
-| Visual Studio Code (Microsoft build) | Proprietary Microsoft license on the branded build | **VSCodium** (MIT) | Add `packages.microsoft.com` and `apt install code` (a GUI app — usually only wanted on the workstation edition) |
+| Not shipped | Reason | Shipped instead | How to get the original |
+|-------------|--------|-----------------|-------------------------|
+| Terraform | BUSL 1.1 (source-available, not FOSS) | **OpenTofu** (MPL-2.0) | `apt install terraform` from apt.releases.hashicorp.com |
+| Packer | BUSL 1.1 | _none (no mainstream open fork)_ | `apt install packer` from apt.releases.hashicorp.com |
 
 ---
 

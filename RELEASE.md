@@ -6,9 +6,7 @@ signed). Every user-facing thing is a versioned `.deb`:
 | What changes | Package | Applied by |
 |---|---|---|
 | Wallpapers | `sysible-artwork` | file install |
-| Default wallpaper / desktop / accent | `sysible-desktop-gnome` | gschema |
-| GRUB theme, login bg, app icons, Sora font | `sysible-branding` | postinst (update-grub, login gresource, icon/font caches) |
-| Terminal + Atlas | `systerm` (built from its repo in CI) | file install |
+| GRUB boot theme, os-release, Sora font | `sysible-branding` | postinst (update-grub, font cache) |
 | Repo config, keys, third-party sources | `sysible-release` | file install |
 | The install set | `sysible-meta` | dependencies |
 

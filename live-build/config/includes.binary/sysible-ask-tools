@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sysible Workstation — ask which optional/licensed tools to add, DURING the
+# Sysible Server — ask which optional/licensed tools to add, DURING the
 # Debian install and BEFORE the base system is laid down.
 #
 # Run from preseed/early_command (which executes right after the preseed is read,

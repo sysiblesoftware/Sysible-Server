@@ -1,6 +1,6 @@
 name: ISO
 
-# Build the COMPLETE Sysible Workstation ISO on GitHub's runners, whose network is not
+# Build the COMPLETE Sysible Server ISO on GitHub's runners, whose network is not
 # HTTPS-inspected, so every vendor tool (Docker, Kubernetes, Terraform, cloud
 # CLIs, VS Code) bakes in. Download the finished .iso from the run's Artifacts,
 # or — on a version tag (v*) — from the published GitHub Release.
@@ -63,7 +63,7 @@ jobs:
       - name: Upload ISO (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: sysible-workstation-${{ env.SYSIBLE_ARCH }}-iso
+          name: sysible-server-${{ env.SYSIBLE_ARCH }}-iso
           path: live-build/*.iso
           if-no-files-found: error
           compression-level: 0
@@ -86,7 +86,7 @@ jobs:
           # Per-part checksums, for verifying the downloads BEFORE reassembly.
           sha256sum -b "$BASE".*.part > "SHA256SUMS.$A.parts"
           cat > "REASSEMBLE.$A.md" <<EOF
-          # Sysible Workstation ($A) — reassemble the ISO
+          # Sysible Server ($A) — reassemble the ISO
 
           The ISO is ~3.4 GB, over GitHub's 2 GB per-file release limit, so it is
           split into \`$BASE.*.part\` pieces.
@@ -154,7 +154,7 @@ jobs:
           # On a tag push, use that tag; on a dispatch, create/use inputs.tag
           # at the checked-out commit (action creates the tag if it's new).
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
-          name: Sysible Workstation ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          name: Sysible Server ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
           files: |
             release/*.part
             release/SHA256SUMS.*
@@ -165,13 +165,13 @@ jobs:
           generate_release_notes: false
           append_body: false
           body: |
-            **Sysible Workstation** — the headless engineering platform.
+            **Sysible Server** — the headless engineering platform.
 
             A live Debian-stable image with the whole server toolchain baked in:
             containers, Kubernetes, infrastructure-as-code, cloud CLIs, headless
             libvirt/QEMU and the modern CLI set — installed via the text-mode Debian
-            Installer. No GNOME desktop, no GUI apps. The same toolset as Sysible
-            Workstation, minus the GUI. Includes the Sysible Controller CE installer.
+            Installer. No GNOME desktop, no GUI apps. the full engineering
+            toolset, headless. Includes the Sysible Controller CE installer.
 
             ### Downloads (amd64 & arm64)
             The ISO is ~3.4 GB, over GitHub's 2 GB per-file limit, so each build ships

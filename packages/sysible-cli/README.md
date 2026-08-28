@@ -1,6 +1,6 @@
 # sysible-cli
 
-The `sysible` command for Sysible Workstation.
+The `sysible` command for Sysible Server.
 
 ## `sysible verify`
 

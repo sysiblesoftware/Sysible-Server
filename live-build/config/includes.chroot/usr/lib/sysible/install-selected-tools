@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sysible Workstation — first-boot install of the optional tools the operator
+# Sysible Server — first-boot install of the optional tools the operator
 # chose DURING the Debian install.
 #
 # The installer wrote the selection to /etc/sysible/tools.wanted (see

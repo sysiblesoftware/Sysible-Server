@@ -42,7 +42,7 @@ FG_LIGHT = (20, 29, 56)      # wordmark on light
 GREEN = (109, 219, 115)      # #6ddb73
 BLUE = (122, 162, 255)       # #7aa2ff
 FONT = os.path.join(ROOT, "branding/fonts/Sora.ttf")   # Sora (OFL), SES rebrand
-WORDMARK = "SYSIBLE WORKSTATION"
+WORDMARK = "SYSIBLE SERVER"
 
 
 def _sora(size):
@@ -68,7 +68,7 @@ def _svg_png(url, size):
 
 
 def mark(size):
-    """The Sysible Workstation brand mark, size x size, transparent background."""
+    """The Sysible Server brand mark, size x size, transparent background."""
     return _svg_png(MARK, size)
 
 
@@ -241,7 +241,7 @@ def _fit_font(text, max_w, cap_px, tracking_ratio):
 
 
 def hlockup(W, H, fg):
-    """Horizontal lockup: mark on the left, SYSIBLE WORKSTATION to its right. Transparent.
+    """Horizontal lockup: mark on the left, SYSIBLE SERVER to its right. Transparent.
     The wordmark is auto-fitted so the whole lockup always sits inside W x H."""
     canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     s = int(H * 0.80)
@@ -260,7 +260,7 @@ def hlockup(W, H, fg):
 
 
 def vlockup(W, H, fg):
-    """Vertical lockup: mark on top, SYSIBLE WORKSTATION beneath. Transparent."""
+    """Vertical lockup: mark on top, SYSIBLE SERVER beneath. Transparent."""
     canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     s = int(W * 0.58)
     m = mark(s)
@@ -310,7 +310,7 @@ def build():
     HEADLESS SERVER SCOPE: this image ships no desktop, no Calamares, no GDM and
     no app-grid icons, so only the BOOT-menu artwork and the REPO badges/avatars
     are rendered from the mark here (the desktop/installer assets that the
-    Workstation generated were removed with the GUI). The dict order below is the
+    GUI/desktop build generated were removed with the GUI). The dict order below is the
     manifest order — keep it stable so regeneration produces a byte-identical
     manifest layout."""
     A = {}
@@ -362,7 +362,7 @@ def main():
     check = "--check" in sys.argv
     assets = build()
     # HEADLESS SERVER: the desktop SVG copies (app-grid / pixmap icons) that the
-    # Workstation kept byte-synced here were removed with the GUI, so there are no
+    # GUI/desktop build kept byte-synced here were removed with the GUI, so there are no
     # SVG targets to sync — only the two canonical marks (hashed below) remain.
     svg_targets = []
     src_bytes = {p: open(p, "rb").read() for p in {MARK, CONTROLLER_MARK}}

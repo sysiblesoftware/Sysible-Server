@@ -1,13 +1,13 @@
-# Sysible Workstation — third-party licenses & written offer for source
+# Sysible Server — third-party licenses & written offer for source
 
-Sysible Workstation is a Debian-based live/installable system: an aggregate of many
+Sysible Server is a Debian-based live/installable system: an aggregate of many
 independent programs, each under its own license. This document (a) makes the
 GPL/LGPL written offer for corresponding source code, (b) lists the non-Debian
 components Sysible bundles and their licenses, and (c) records the software
 Sysible deliberately does **not** ship and why.
 
 _A copy of this file ships on every installed system at
-`/usr/share/doc/sysible-workstation/THIRD-PARTY-LICENSES.md`._
+`/usr/share/doc/sysible-server/THIRD-PARTY-LICENSES.md`._
 
 ---
 
@@ -21,7 +21,7 @@ carries its own license and copyright in
 ## 2. Written offer for corresponding source (GPL/LGPL/MPL §3)
 
 For any GPL-, LGPL-, MPL-, or other copyleft-licensed binary distributed as part
-of a Sysible Workstation ISO, we make the following offer, **valid for three (3) years
+of a Sysible Server ISO, we make the following offer, **valid for three (3) years
 from the date you received the image**:
 
 > You may obtain the complete corresponding source code for any copyleft
@@ -34,7 +34,7 @@ from the date you received the image**:
 >    version.
 > 2. **Sysible source** — for Sysible's own packages and for the build
 >    definition of the image itself, see
->    <https://github.com/sysiblesoftware/Sysible-Linux> and the other
+>    <https://github.com/sysiblesoftware/sysible-server> and the other
 >    repositories under <https://github.com/sysiblesoftware>.
 > 3. **By request** — if you cannot retrieve a specific component's source by
 >    (1) or (2), email **source@sysible.com** with the release tag (e.g.
@@ -62,7 +62,7 @@ own full license text in its package or upstream repository.
 | Azure CLI (`azure-cli`) | MIT | https://github.com/Azure/azure-cli |
 | Google Cloud CLI (`google-cloud-cli`) | Apache-2.0 (Cloud SDK Terms of Service) | https://cloud.google.com/sdk |
 
-Sysible Workstation is headless: no desktop/GUI applications are bundled. OpenTofu is
+Sysible Server is headless: no desktop/GUI applications are bundled. OpenTofu is
 the MPL-2.0 open fork that replaces HashiCorp Terraform (BUSL 1.1, not shipped).
 
 ## 4. Fonts

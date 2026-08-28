@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sysible-tools — install optional, separately-licensed tools on demand.
 #
-# Some tooling can't be baked into the Sysible Workstation image for LICENSING
+# Some tooling can't be baked into the Sysible Server image for LICENSING
 # reasons — most notably HashiCorp's products (Terraform, Vault, Consul, Nomad,
 # Packer, Boundary), which moved to the Business Source License (BUSL-1.1). The
 # ISO ships the open OpenTofu (`tofu`) in Terraform's place; this menu lets an
@@ -42,7 +42,7 @@ HASHICORP_IDS=" terraform vault consul nomad packer boundary "
 # ---- Sysible-green whiptail/newt theme -----------------------------------
 # whiptail reads NEWT_COLORS for its palette. Without it the menu is the stock
 # blue-and-red "awful" default; this dresses it in Sysible green so the picker
-# matches the rest of the workstation (status bar, boot splash, wallpapers).
+# matches the rest of the server (status bar, boot splash, wallpapers).
 export NEWT_COLORS='
 root=,black
 window=,black
@@ -65,7 +65,7 @@ emptyscale=,black
 fullscale=,green
 helpline=green,black
 '
-BACKTITLE="Sysible Workstation  ·  optional software"
+BACKTITLE="Sysible Server  ·  optional software"
 
 # ---- helpers -------------------------------------------------------------
 field() { printf '%s' "$1" | cut -d'|' -f"$2"; }
@@ -152,7 +152,7 @@ license_ack() {  # license_ack <space-separated ids> ; returns 0 to proceed
  LICENSE NOTICE
    These tools are distributed by HashiCorp under the Business
    Source License 1.1 (BUSL-1.1), NOT open source. They are not
-   shipped in the Sysible Workstation image for that reason. Installing
+   shipped in the Sysible Server image for that reason. Installing
    them means YOU accept HashiCorp's license terms:
        https://www.hashicorp.com/bsl
    Affected:$hc

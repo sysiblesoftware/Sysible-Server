@@ -1,6 +1,6 @@
-# Sysible Workstation — Build Roadmap
+# Sysible Server — Build Roadmap
 
-A Debian-stable–based engineering **workstation**. We inherit everything we can
+A Debian-stable–based engineering **server**. We inherit everything we can
 from Debian and maintain only Sysible-specific packages + an opinionated toolkit.
 
 ## Model
@@ -8,32 +8,34 @@ from Debian and maintain only Sysible-specific packages + an opinionated toolkit
 Two things ship Sysible, everything else is Debian or an upstream repo:
 
 1. **A tiny apt repo** (`sysible-stable` / `sysible-dev`) holding only `sysible-*`.
-2. **Metapackages** that pull the toolkit — the real "product" is `sysible-workstation`.
+2. **Metapackages** that pull the toolkit — the real "product" is `sysible-server`.
 
-The ISO is just live-build preseeding `sysible-workstation` + GNOME + Calamares.
+The ISO is just live-build preseeding `sysible-server` on a Debian base, installed
+via the text-mode Debian Installer — headless, no GNOME and no Calamares.
 Do the metapackage + repo first; the ISO is the last step, not the first.
 
 ## Phases
 
 - [ ] **P1 — Repo + metapackage**
-  - [x] `sysible-meta` source → `sysible-workstation` (this scaffold)
+  - [x] `sysible-meta` source → `sysible-server` (this scaffold)
   - [ ] `sysible-archive-keyring` + `sysible-release` (our repo config + third-party repo configs/keys)
   - [ ] aptly repo, `sysible-dev` and `sysible-stable` suites, publish script
 - [ ] **P2 — Sysible packages**
   - [ ] `sysible-cli` (ships `sysible verify`)
   - [ ] `sysible-controller`, `sysible-agent` (already built elsewhere — repackage for the repo)
-  - [ ] `systerm` (default terminal — already packaged)
-  - [ ] `sysible-artwork` (the finalized wallpapers) + `sysible-desktop-gnome` (dconf defaults)
+  - [ ] `sysible-artwork` (the finalized wallpapers) + `sysible-branding` (GRUB theme, os-release, Sora font)
 - [ ] **P3 — Verify framework**
   - [ ] `sysible verify [--network|--containers|--virtualization|--security|--json]`
-  - [ ] CI: install `sysible-workstation` on fresh Debian, run `sysible verify`, gate on it
+  - [ ] CI: install `sysible-server` on fresh Debian, run `sysible verify`, gate on it
 - [ ] **P4 — ISO**
-  - [ ] live-build config: GNOME + `sysible-workstation` + Calamares + branding
+  - [ ] live-build config: text-mode Debian Installer + `sysible-server` + branding (no GUI)
   - [ ] CI builds nightly `dev` ISO + tagged `stable` ISO; boot-test in a VM via Sysible Controller
 
 ## Non-goals
 
-Custom kernel · fork of Debian · replacing systemd · mirroring Debian packages.
+Custom kernel · fork of Debian · replacing systemd · mirroring Debian packages ·
+any GUI/desktop stack (that is the separate Sysible Workstation product, in the
+Sysible-Linux repo).
 
 ## Known package traps (tracked so the metapackage ships the *right* thing)
 
@@ -43,4 +45,4 @@ Custom kernel · fork of Debian · replacing systemd · mirroring Debian package
 - `awscli` — Debian is v1; AWS v2 is a bundled installer.
 - `eza` — only Debian 13+; `bat`→`batcat`, `fd-find`→`fdfind` (symlink them).
 - `yq` — Debian's is the Python one; the Go `mikefarah/yq` is what people expect.
-- VS Code extensions — marketplace ToS; VSCodium + open-vsx is the redistributable path.
+</content>

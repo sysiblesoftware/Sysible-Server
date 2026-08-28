@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Sysible Workstation wallpaper generator — the SINGLE reproducible source for every
+"""Sysible Server wallpaper generator — the SINGLE reproducible source for every
 shipped desktop background.
 
 Renders each procedural style at 7680x4320 (JPEG q92) in DARK and LIGHT variants
-with the LOCKED "SYSIBLE WORKSTATION" banner composited bottom-left on every one.
+with the LOCKED "SYSIBLE SERVER" banner composited bottom-left on every one.
 Styles: topographic, topographic-ridge, neural, cosmos, roads (Lumpkin County,
 GA). numpy is used for gradients, vignette
 and large field fills so 8K renders stay fast and low-memory; PIL vector drawing
@@ -143,7 +143,7 @@ def glow_layer(W, H, draw_fn, blur_px, scale=4):
 
 
 # ============================================================================
-# BANNER — LOCKED design (banner_c_mock.py). small SYSIBLE WORKSTATION, green rule
+# BANNER — LOCKED design (banner_c_mock.py). small SYSIBLE SERVER, green rule
 # directly UNDER the wordmark, ENGINEERING · AUTOMATION justified under the rule,
 # bottom-left with ~11% left / ~13% bottom safe margin. Identical everywhere.
 # The 11% left inset keeps the wordmark clear of GNOME's `zoom` crop: on a
@@ -171,7 +171,7 @@ def draw_banner(img_rgba, pal):
     mute_col = LIGHT_MUTE if pal["light"] else MUTE
 
     wf = _sora(cap)
-    word = "SYSIBLE WORKSTATION"
+    word = "SYSIBLE SERVER"
     tr = cap * 0.10
     cap_h = wf.getbbox(word)[3]
     top = int(y_base - cap_h)
