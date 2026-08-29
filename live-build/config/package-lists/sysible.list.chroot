@@ -24,6 +24,11 @@ openssh-server
 sudo
 ca-certificates
 gnupg
+# SSH hardening that backs the shipped configs (otherwise those files are inert):
+#   fail2ban         -> etc/fail2ban/jail.d/sysible.local  (bans brute-force sshd)
+#   libpam-pwquality -> etc/security/pwquality.conf.d/*    (rejects weak passwords)
+fail2ban
+libpam-pwquality
 # Fetching artifacts / talking to APIs.
 curl
 wget

@@ -1,19 +1,30 @@
 #!/bin/sh
-# Sysible Server default identities: user 'sysible' / password 'sysible', and
-# root / 'sysible'. CHANGE THESE before any public or production build.
+# Sysible Server default identity: the unprivileged admin user 'sysible'.
+# NO password is baked into the image — shipping a constant credential would
+# make every install remotely guessable. Installed systems set the password
+# interactively via the preseed; the live session autologs in as 'sysible'.
 set -e
 DEFUSER=sysible
-DEFPASS=sysible
 
 if ! id "$DEFUSER" >/dev/null 2>&1; then
     useradd -m -s /bin/bash -c "Sysible" "$DEFUSER"
 fi
-for g in sudo kvm libvirt docker netdev; do
+# Default groups deliberately EXCLUDE docker and libvirt: membership in either is
+# root-equivalent (`docker run -v /:/mnt …`), so the default account must not hold
+# it out of the box. Add a user to docker/libvirt via sudo only when actually
+# needed. (Kept in sync with user-default-groups in auto/config.)
+for g in sudo kvm netdev; do
     groupadd -f "$g" 2>/dev/null || true
     usermod -aG "$g" "$DEFUSER" 2>/dev/null || true
 done
-printf '%s:%s\n' "$DEFUSER" "$DEFPASS" | chpasswd
-printf 'root:%s\n'  "$DEFPASS"          | chpasswd
+# No default credentials ship: root is LOCKED and 'sysible' has no password set.
+# Expire the empty password so any interactive login on a persisted/live medium
+# must set one before the shell is usable; installs get their password from the
+# preseed prompt instead. SSH ships key-only (PasswordAuthentication no), and
+# PermitEmptyPasswords no means the empty password is never remotely usable.
+passwd -l root
+passwd -d "$DEFUSER"
+chage -d 0 "$DEFUSER"
 
 # Brand the hostname.
 echo sysible > /etc/hostname

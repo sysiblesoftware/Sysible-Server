@@ -8,9 +8,9 @@
 # SUPPLY-CHAIN INTEGRITY: every fetched keyring is checked against a pinned set
 # of OpenPGP fingerprints. If a download contains any key that is NOT pinned
 # (tampering, a hijacked mirror, or a CA-intercepting proxy swapping the key),
-# we FAIL CLOSED and install nothing. Keys whose fingerprints could not be
-# verified upstream at authoring time carry an empty pin: their fingerprint is
-# logged loudly for pinning, but not yet enforced (fetch still relies on TLS).
+# we FAIL CLOSED and install nothing. This is fail-closed for EVERY keyring: a
+# keyring with no pinned fingerprint is a FATAL error (never installed on TLS
+# trust alone) — add its primary fingerprint to pins_for() before enabling it.
 set -e
 KR=/usr/share/keyrings
 command -v update-ca-certificates >/dev/null 2>&1 && update-ca-certificates >/dev/null 2>&1 || true
@@ -26,7 +26,8 @@ pins_for() {
         microsoft.gpg)   echo "BC528686B50D79E339D3721CEB3E94ADBE1229CF" ;;
         github-cli.gpg)  echo "2C6106201985B60E6C7AC87323F3D4EA75716059 7F38BBB59D064DBCB3D84D725612B36462313325" ;;   # gh is mid-rotation: cli.github.com's CDN serves two keyring variants (old primary 2C61..., new primary 7F38...). Accept either; both come from GitHub's TLS endpoint.
         kubernetes.gpg)  echo "DE15B14486CD377B9E876E1A234654DA9A296436" ;;   # pkgs.k8s.io v1.31 signing key (observed on a trusted network)
-        *)               echo "" ;;   # google-cloud.gpg — logged, not yet enforced (pin once observed on a trusted network)
+        google-cloud.gpg) echo "EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796" ;;  # packages.cloud.google.com apt signing key (primary fingerprint, verified out-of-band)
+        *)               echo "" ;;   # no keyring is unpinned anymore; an empty pin is FATAL below
     esac
 }
 
@@ -63,7 +64,11 @@ fetch() {  # fetch <url> <dest.gpg>
         done
         printf '  verified pinned fingerprint(s): %s\n' "$(echo $got | tr '\n' ' ')"
     else
-        printf '  WARNING: %s is not fingerprint-pinned yet. Observed: %s\n' "$dest" "$(echo $got | tr '\n' ' ')"
+        # FAIL CLOSED: an unpinned keyring would be trusted on TLS alone, which is
+        # exactly the threat this pinning defends against. Never install one — add
+        # its primary fingerprint to pins_for() (verified out-of-band) first.
+        echo "FATAL: $dest has no pinned fingerprint (observed: $(echo $got | tr '\n' ' ')) — refusing to install an unpinned vendor key" >&2
+        rm -f "$tmp" "$out"; exit 1
     fi
     install -m0644 "$out" "$KR/$dest"
     rm -f "$tmp" "$out"

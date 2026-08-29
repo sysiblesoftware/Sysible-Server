@@ -11,21 +11,39 @@ echo "== Sysible: installing vendor tools =="
 CURL="curl -fsSL --connect-timeout 20 --max-time 600 --retry 3 --retry-delay 3"
 
 # Verify a downloaded artifact against the checksum its upstream publishes for
-# that exact release. FAIL CLOSED on a mismatch (the artifact was tampered with
-# in transit or at the CDN). If the checksum file itself can't be fetched, WARN
-# and continue — that's an availability hiccup, and TLS already protected the
-# download. Usage: verify_sha256 <file> <checksum_url> [<filename_in_sumfile>]
+# that exact release, and FAIL CLOSED. A mismatch always aborts the build (the
+# artifact was tampered with in transit or at the CDN). This is corruption/tamper
+# hygiene WITHIN a trusted origin — only checked-in pinned hashes would raise the
+# bar against a fully compromised CDN — but it must never install a binary that
+# was NOT verified. Usage:
+#   verify_sha256 <file> <checksum_url> [<filename_in_sumfile>] [required|optional]
 #   - with a filename: match that line in a multi-entry SHA256SUMS file
 #   - without: take the first 64-hex token (single-hash files, e.g. helm)
+#   - mode "required" (default): a REQUIRED tool. If the checksum file is
+#     unfetchable or has no entry for the artifact, ABORT (exit 1) — never install
+#     it unverified.
+#   - mode "optional": an OPTIONAL tool. On an unfetchable/missing checksum,
+#     return non-zero so the caller SKIPS the install instead of shipping an
+#     unverified binary. (A mismatch still aborts.)
 verify_sha256() {
-    _f="$1"; _url="$2"; _name="$3"
-    _sums=$($CURL "$_url" 2>/dev/null) || { echo "   WARN: checksum $_url unfetchable — skipping integrity check for $_f"; return 0; }
+    _f="$1"; _url="$2"; _name="$3"; _mode="${4:-required}"
+    _sums=$($CURL "$_url" 2>/dev/null) || {
+        if [ "$_mode" = optional ]; then
+            echo "   WARN: checksum $_url unfetchable — SKIPPING unverified $_f" >&2; return 1
+        fi
+        echo "FATAL: checksum $_url unfetchable — refusing to install unverified $_f" >&2; exit 1
+    }
     if [ -n "$_name" ]; then
         _want=$(printf '%s\n' "$_sums" | grep -E "[[:space:]]\*?${_name}\$" | grep -oE '^[0-9a-fA-F]{64}' | head -1)
     else
         _want=$(printf '%s\n' "$_sums" | grep -oE '[0-9a-fA-F]{64}' | head -1)
     fi
-    [ -n "$_want" ] || { echo "   WARN: no checksum for ${_name:-$_f} in $_url — skipping"; return 0; }
+    if [ -z "$_want" ]; then
+        if [ "$_mode" = optional ]; then
+            echo "   WARN: no checksum for ${_name:-$_f} in $_url — SKIPPING unverified" >&2; return 1
+        fi
+        echo "FATAL: no checksum for ${_name:-$_f} in $_url — refusing to install unverified" >&2; exit 1
+    fi
     _got=$(sha256sum "$_f" | awk '{print $1}')
     if [ "$_got" = "$_want" ]; then
         echo "   sha256 OK: $_got"
@@ -64,32 +82,23 @@ if ! curl -fsS --connect-timeout 20 --max-time 60 -o /dev/null https://download.
     exit 1
 fi
 
-# Fetch the vendor signing keys into /usr/share/keyrings (matches the .sources
-# that sysible-release installed). Ships with sysible-release.
+# Provision the vendor apt signing keys into /usr/share/keyrings (matches the
+# .sources files sysible-release installed, Signed-By=/usr/share/keyrings/<vendor>.gpg).
+# fetch-third-party-keyrings.sh is the SINGLE authoritative key provisioner: it
+# installs docker/kubernetes/microsoft/google-cloud (and the rest) to those exact
+# paths WITH fingerprint pinning and FAILS CLOSED on any unpinned/tampered key.
+# Do NOT re-fetch these keys unpinned here — doing so would overwrite the pinned
+# keyrings with TLS-only-trusted copies and silently defeat the supply-chain
+# defense. FAIL CLOSED if the pinning script is missing/non-executable rather than
+# building an image whose vendor repos are unsigned or unverified.
+echo "-- provisioning vendor apt signing keys (pinned) --"
 if [ -x /usr/share/sysible/scripts/fetch-third-party-keyrings.sh ]; then
     /usr/share/sysible/scripts/fetch-third-party-keyrings.sh
+else
+    echo "FATAL: pinned keyring provisioner /usr/share/sysible/scripts/fetch-third-party-keyrings.sh" >&2
+    echo "       is missing or not executable — refusing to build without pinned vendor keys." >&2
+    exit 1
 fi
-
-# Provision the signing keys for the base-tool vendor repos that sysible-release
-# ships as .sources (Signed-By=/usr/share/keyrings/<vendor>.gpg). sysible-release
-# ships the .sources but NOT these keys, so without this every one of these repos
-# fails `apt-get update` with "repository is not signed" and the whole ISO build
-# dies. Each key is written to the exact path its .sources expects. FAIL CLOSED:
-# a base tool that can't be verified must not silently vanish from the image.
-echo "-- provisioning vendor apt signing keys --"
-fetch_key() {   # <url> <dest-keyring>
-    _t="$(mktemp)"
-    if $CURL "$1" -o "$_t"; then
-        gpg --dearmor < "$_t" > "$2" && chmod 0644 "$2" && echo "   keyring: $2"
-    else
-        echo "FATAL: could not fetch vendor signing key $1" >&2; rm -f "$_t"; exit 1
-    fi
-    rm -f "$_t"
-}
-fetch_key https://download.docker.com/linux/debian/gpg            /usr/share/keyrings/docker.gpg
-fetch_key https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key /usr/share/keyrings/kubernetes.gpg
-fetch_key https://packages.microsoft.com/keys/microsoft.asc       /usr/share/keyrings/microsoft.gpg
-fetch_key https://packages.cloud.google.com/apt/doc/apt-key.gpg   /usr/share/keyrings/google-cloud.gpg
 
 apt-get update
 
@@ -136,7 +145,11 @@ echo "== GitHub-release binaries =="
 if $CURL "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_${ARCH}.tar.gz" -o /tmp/k9s.tgz 2>/dev/null; then
     k9s_sum=$($CURL "https://github.com/derailed/k9s/releases/latest/download/checksums.sha256" 2>/dev/null \
         | grep -E "[[:space:]]\*?k9s_Linux_${ARCH}\.tar\.gz\$" | grep -oE '^[0-9a-fA-F]{64}' | head -1)
-    if [ -z "$k9s_sum" ] || [ "$(sha256sum /tmp/k9s.tgz | awk '{print $1}')" = "$k9s_sum" ]; then
+    if [ -z "$k9s_sum" ]; then
+        # No checksum available (unfetchable / no arch line): k9s is optional, so
+        # SKIP rather than install an unverified binary into /usr/local/bin.
+        echo "k9s SKIPPED — no checksum available, not installing unverified binary"
+    elif [ "$(sha256sum /tmp/k9s.tgz | awk '{print $1}')" = "$k9s_sum" ]; then
         tar xz -C /usr/local/bin -f /tmp/k9s.tgz k9s 2>/dev/null && echo "k9s ok" || echo "k9s skipped (extract)"
     else
         echo "k9s SKIPPED — checksum mismatch, not installing unverified binary"
@@ -184,8 +197,8 @@ oll_tag=$($CURL https://api.github.com/repos/ollama/ollama/releases/latest 2>/de
     | grep -oE '"tag_name": *"[^"]+"' | grep -oE 'v[0-9][0-9.]*' | head -1)
 [ -n "$oll_tag" ] || oll_tag=v0.5.7
 oll_base="https://github.com/ollama/ollama/releases/download/${oll_tag}"
-if $CURL "${oll_base}/ollama-linux-${ARCH}.tgz" -o /tmp/ollama.tgz 2>/dev/null; then
-    verify_sha256 /tmp/ollama.tgz "${oll_base}/sha256sum.txt" "ollama-linux-${ARCH}.tgz"
+if $CURL "${oll_base}/ollama-linux-${ARCH}.tgz" -o /tmp/ollama.tgz 2>/dev/null \
+   && verify_sha256 /tmp/ollama.tgz "${oll_base}/sha256sum.txt" "ollama-linux-${ARCH}.tgz" optional; then
     tar -C /usr/local -xzf /tmp/ollama.tgz
     rm -f /tmp/ollama.tgz
     # Trim GPU runners to keep the image lean (kept: CPU runner).
@@ -219,7 +232,8 @@ UNIT
     /usr/local/bin/ollama --version 2>/dev/null || true
     echo "ollama ${oll_tag} bundled (engine only; pull a model with: sysible ai --pull)"
 else
-    echo "ollama skipped (download) — sysible ai will guide install on first use"
+    rm -f /tmp/ollama.tgz 2>/dev/null || true
+    echo "ollama skipped (download or unverified) — sysible ai will guide install on first use"
 fi
 
 echo "== Sysible vendor tools done =="

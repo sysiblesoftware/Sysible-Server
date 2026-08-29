@@ -19,7 +19,7 @@ lb config noauto \
   --bootloaders "$BOOTLOADERS" \
   --binary-images iso-hybrid \
   --debian-installer live \
-  --bootappend-live "boot=live components username=sysible user-fullname=Sysible user-default-groups=sudo,kvm,libvirt,docker,netdev" \
+  --bootappend-live "boot=live components username=sysible user-fullname=Sysible user-default-groups=sudo,kvm,netdev" \
   --bootappend-install "file=/cdrom/preseed.cfg" \
   --iso-application "Sysible Server" \
   --iso-publisher "Sysible" \

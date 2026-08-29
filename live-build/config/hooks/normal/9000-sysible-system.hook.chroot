@@ -38,10 +38,11 @@ rm -f /run/motd.dynamic 2>/dev/null || true
 
 # Enable the server-relevant daemons. SSH is enabled by default on a headless
 # server (you administer it remotely); the shipped
-# /etc/ssh/sshd_config.d/10-sysible.conf drop-in accepts PASSWORD login by
-# default (the account password you set at install — no default credentials
-# ship), so a fresh box is reachable immediately. Add a key + set
-# PasswordAuthentication no there to harden an internet-facing box.
+# /etc/ssh/sshd_config.d/10-sysible.conf drop-in is KEY-ONLY by default
+# (PasswordAuthentication no) because the login name is fixed to 'sysible'. No
+# default credentials ship: root is locked and 'sysible' has no baked password,
+# so install your public key before you need remote access (password auth is
+# opt-in — see that drop-in).
 for svc in ssh libvirtd docker; do systemctl enable "$svc" 2>/dev/null || true; done
 for grp in sudo kvm libvirt docker netdev; do groupadd -f "$grp" 2>/dev/null || true; done
 

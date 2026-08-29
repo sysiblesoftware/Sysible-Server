@@ -7,6 +7,13 @@ own /v1 shim) works by pointing SYSIBLE_AI_URL/SYSIBLE_AI_BACKEND at it.
 
 Stdlib only (urllib/json) so it ships with the dependency-free sysible-cli.
 
+The "nothing leaves the machine" guarantee holds ONLY at the default endpoint.
+SYSIBLE_AI_URL (and SYSIBLE_AI_KEY) override the destination of the terminal
+context sent to the model — the command, its output, the CWD, and os-release —
+so pointing them at a non-loopback host sends that context OFF the machine. When
+the resolved host is not a loopback address, a one-line warning is printed to
+stderr before anything is sent.
+
 Config (env):
   SYSIBLE_AI_URL      base URL of the model server   (default http://127.0.0.1:11434)
   SYSIBLE_AI_MODEL    model name                      (default qwen2.5-coder:7b)
@@ -14,12 +21,14 @@ Config (env):
   SYSIBLE_AI_KEY      bearer token for openai backend (optional; local servers ignore it)
 """
 import http.client
+import ipaddress
 import json
 import os
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 
 # Network failures we render as clean, user-facing guidance (never a traceback).
 _NET_ERRORS = (urllib.error.URLError, OSError, http.client.HTTPException)
@@ -56,6 +65,31 @@ def _cfg():
         # URL explicitly points at a /v1 base — that's how those are configured.
         backend = "openai" if url.rstrip("/").endswith("/v1") else "ollama"
     return url, model, backend
+
+
+def _is_loopback(url):
+    """True if url's host stays on this machine (loopback IP or 'localhost')."""
+    host = (urlparse(url).hostname or "").strip("[]")
+    if host in ("", "localhost") or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        # A non-literal hostname (not localhost) can resolve anywhere → treat as
+        # off-box so the user is warned before their terminal context is sent.
+        return False
+
+
+def _warn_if_remote(url, err=None):
+    """Warn once, on stderr, when terminal context would leave the machine."""
+    if not _is_loopback(url):
+        err = err or sys.stderr
+        err.write(
+            f"sysible ai: WARNING — sending terminal context (command, output, cwd) "
+            f"to a NON-LOCAL server: {url}\n"
+            f"  This is set via SYSIBLE_AI_URL/SYSIBLE_AI_KEY; the local-only default "
+            f"is {DEFAULT_URL}. Unset them to keep everything on this machine.\n"
+        )
 
 
 def _http(url, data=None, headers=None, method="GET", timeout=300):
@@ -231,6 +265,8 @@ def analyze(command=None, exit_code=None, output=None, question=None,
             auto_pull=False, out=None):
     out = out or sys.stdout
     url, model, backend = _cfg()
+    # Warn before anything is sent if the endpoint is off-box (env-overridden).
+    _warn_if_remote(url)
     _ensure_ready(url, model, backend, auto_pull, out)
     messages = _build_messages(command, exit_code, output, question)
     if backend == "ollama":
