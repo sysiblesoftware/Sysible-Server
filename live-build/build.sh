@@ -6,7 +6,7 @@
 #   * Debian-native tools come from the package list (below).
 #   * The Sysible packages are built here and included directly.
 #   * The non-Debian vendor tools (Docker, Kubernetes, cloud CLIs,
-#     k9s/sops/eza, PowerShell, Ollama) are installed by a chroot hook that
+#     k9s/sops/eza, PowerShell) are installed by a chroot hook that
 #     controls apt directly — reliable, unlike live-build's archive-key handling.
 set -e
 cd "$(dirname "$0")"

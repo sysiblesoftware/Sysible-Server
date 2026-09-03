@@ -58,7 +58,6 @@ own full license text in its package or upstream repository.
 | SOPS (`sops`) | MPL-2.0 | https://github.com/getsops/sops |
 | eza (`eza`) | MIT | https://github.com/eza-community/eza |
 | PowerShell (`powershell`) | MIT | https://github.com/PowerShell/PowerShell |
-| Ollama (`ollama`) | MIT | https://github.com/ollama/ollama |
 | Azure CLI (`azure-cli`) | MIT | https://github.com/Azure/azure-cli |
 | Google Cloud CLI (`google-cloud-cli`) | Apache-2.0 (Cloud SDK Terms of Service) | https://cloud.google.com/sdk |
 

@@ -73,16 +73,3 @@ fi
 chmod 0755 /usr/lib/sysible/branding-guard 2>/dev/null || true
 systemctl enable sysible-branding-guard.service 2>/dev/null || true
 
-# Sysible AI shell helper: /etc/profile.d is only read by LOGIN shells, but
-# interactive non-login shells (e.g. an SSH session that re-sources) read
-# /etc/bash.bashrc. Source our helper from there too so `sai` and the
-# failed-command hint are available in any interactive shell.
-if [ -f /etc/bash.bashrc ] && ! grep -q 'profile.d/sysible-ai.sh' /etc/bash.bashrc; then
-    cat >> /etc/bash.bashrc <<'BRC'
-
-# Sysible AI terminal companion (interactive shells).
-if [ -n "$PS1" ] && [ -f /etc/profile.d/sysible-ai.sh ]; then
-    . /etc/profile.d/sysible-ai.sh
-fi
-BRC
-fi
