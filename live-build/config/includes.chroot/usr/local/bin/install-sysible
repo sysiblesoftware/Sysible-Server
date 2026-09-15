@@ -1,22 +1,35 @@
 #!/bin/sh
-# install-sysible — install the Sysible CE stack (Controller, SLEP, Connect) on a
-# Sysible Server, on demand. Nothing about the platform is baked into the ISO
-# except this helper, so a fresh server runs no Sysible services and opens no
-# ports until you choose to install them.
+# sync-sha256: 4b4a31b391e959fc757454d2752835d9aa64df27582c359585e46ff5578ebb1d
+# install-sysible — install the Sysible CE stack on this machine, on demand.
+# Nothing about the platform is baked into the ISO except this helper, so a fresh
+# install runs no Sysible services and opens no ports until you choose to install
+# them.
+#
+# ONE script, shipped byte-identical on Sysible Workstation and Sysible Server.
+# They used to be separate copies and they drifted: the Server's predated the SLOP
+# option entirely, still aborted the whole run on the first app that failed to come
+# up, and never offered the optional software — so "install the Sysible software"
+# meant something different on each edition. The edition's name is read from
+# os-release at runtime instead of being written into the file, and the sync-sha256
+# line above is checked by both repos' tests, so the two cannot drift again in
+# silence. Regenerate it with: python tests/stamp_sync.py
 #
 # Each product is cloned to /opt/sysible-src/<repo> and brought up as a container
 # via the suite's unified `sysible_ctl` CLI, which is also installed so you can
 # manage everything afterward (sysible_ctl update all, status, logs, …).
 #
-#   sudo install-sysible                 # pick from a menu (default: all)
+#   sudo install-sysible                 # pick from a menu (default: all apps)
 #   sudo install-sysible controller slep # install specific builds
-#   sudo install-sysible all             # everything, non-interactively
+#   sudo install-sysible all             # Controller + SLEP + Connect
+#   sudo install-sysible slop            # ALL THREE + the SLOP gateway (one front
+#                                        # door: https://slop.lan/, app subdomains)
 set -eu
 
 SRC_DIR=/opt/sysible-src
 CTL_REPO="https://github.com/sysiblesoftware/sysible-controller"
 SLEP_REPO="https://github.com/sysiblesoftware/sysible-linux-engineering-platform"
 CONNECT_REPO="https://github.com/sysiblesoftware/sysible-connect"
+SLOP_REPO="https://github.com/sysiblesoftware/sysible-linux-operations-platform"
 
 # Sysible-green whiptail theme (matches sysible-tools).
 export NEWT_COLORS='root=,black
@@ -32,41 +45,147 @@ compactbutton=green,black
 label=green,black
 '
 
+# Which edition this is, for the window titles. PRETTY_NAME carries a tagline on
+# Workstation ("Sysible Workstation — Engineering Automation Cloud"); keep the name.
+_EDITION="$( ( . /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-Sysible Linux}" ) | sed 's/ [—-].*//' )"
+[ -n "$_EDITION" ] || _EDITION="Sysible Linux"
+
 say()  { printf '%s\n' "$*"; }
+# Every failure path here called _warn, and nothing defined it. Under `set -eu`
+# that is not a missing message — it is "command not found", exit 127, and the
+# script dies mid-run reporting nothing about what actually failed. So the one
+# case this script is built for (one product failing, keep going, summarise at
+# the end) aborted instead, and hid its own cause.
+_warn() { printf 'WARNING: %s\n' "$*" >&2; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
-[ "$(id -u)" -eq 0 ] || exec sudo -- "$0" "$@"
-command -v git >/dev/null 2>&1 || die "git is required (it ships on the server — check your PATH)."
-command -v docker >/dev/null 2>&1 || die "docker is required. Install Docker Engine + the compose plugin, then re-run."
+# Re-exec under sudo, carrying the launcher flag: sudo resets the environment, and
+# without it a desktop-launched run loses the very setting that keeps its window
+# open long enough to read.
+[ "$(id -u)" -eq 0 ] || exec sudo "SYSIBLE_INSTALLER_PAUSE=${SYSIBLE_INSTALLER_PAUSE:-0}" -- "$0" "$@"
+
+# ---- keep the window open, on EVERY exit ---------------------------------
+# Launched from the app grid this runs under a Terminal=true .desktop, so the
+# terminal emulator closes the instant the script exits — taking the error with it.
+# The pause used to be the LAST line, which only ran on the paths that reached it:
+# every die() closed the window on its own message. That is why a failed run looked
+# like "the menu appeared, I pressed Enter, and nothing happened" — something DID
+# happen, it just could not be read. A trap covers the failing paths too, which are
+# the ones with something to say.
+#
+# Only for that launcher (it sets SYSIBLE_INSTALLER_PAUSE=1). Run from a shell —
+# which is the only way it runs on Server — the shell is still there afterwards, so
+# stopping to ask for a keypress would just be in the way.
+_PAUSED=0
+_pause_on_exit() {
+  _rc=$?
+  [ "$_PAUSED" = 1 ] && return 0
+  _PAUSED=1
+  if [ "${SYSIBLE_INSTALLER_PAUSE:-0}" = 1 ] && [ -t 0 ] && [ -t 1 ]; then
+    printf '\n'
+    [ "$_rc" -eq 0 ] || printf 'The installer stopped — the reason is above.\n'
+    printf 'Press Enter to close…'
+    read _ || true
+  fi
+  return 0
+}
+trap _pause_on_exit EXIT
+
+# ---- prerequisites, BEFORE the menu --------------------------------------
+# Everything below is fetched from the internet (GitHub for the source, Docker Hub
+# for the base images) and built into containers. Both used to be discovered only
+# once the run was underway — so the operator picked what to install, watched the
+# clone fail, and lost the message with the window. Check first, and say so in the
+# same UI the menu uses.
+_interactive() { command -v whiptail >/dev/null 2>&1 && [ -t 0 ] && [ -t 1 ]; }
+
+# Tell the operator, in whichever UI they are actually in.
+_tell() {  # _tell <title> <message>
+  if _interactive; then
+    whiptail --backtitle "$_EDITION" --title " $1 " --msgbox "\n$2\n" 15 74
+  fi
+  # %b, not %s: the message carries \n escapes for whiptail's msgbox, and %s
+  # would print them literally — one unreadable line in the terminal fallback.
+  printf '\n%b\n%b\n' "$1" "$2" >&2
+}
+
+_online() {
+  # Reach the host we actually clone from. Not ping (blocked on plenty of
+  # networks) and not DNS alone (a captive portal resolves everything happily).
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS --max-time 10 -o /dev/null "https://github.com" 2>/dev/null
+  else
+    git ls-remote --exit-code "$CTL_REPO" HEAD >/dev/null 2>&1
+  fi
+}
+
+command -v git >/dev/null 2>&1 || {
+  _tell "Cannot install" "git is required and is missing from PATH.\n\nIt ships on every Sysible edition, so this usually means PATH is\nbroken.\nNothing has been installed."
+  exit 1; }
+command -v docker >/dev/null 2>&1 || {
+  _tell "Cannot install" "Docker is required and is not installed.\n\nEvery Sysible app runs as a container. Install Docker Engine and the\ncompose plugin, then run this again.\n\nNothing has been installed."
+  exit 1; }
+
+# The Docker daemon must be UP — on a fresh install it is enabled but may not have
+# started yet.
+if ! docker info >/dev/null 2>&1; then
+  say "== starting the Docker daemon =="
+  systemctl start docker 2>/dev/null || service docker start 2>/dev/null || true
+  _i=0; while [ "$_i" -lt 10 ] && ! docker info >/dev/null 2>&1; do sleep 2; _i=$((_i+1)); done
+fi
+docker info >/dev/null 2>&1 || {
+  _tell "Cannot install" "The Docker daemon is not running and could not be started.\n\nTry:  sudo systemctl start docker\n\nNothing can run in containers until it is up, so nothing has been\ninstalled."
+  exit 1; }
+
+say "== checking the internet connection =="
+_online || {
+  _tell "No internet connection" "This installer downloads the Sysible source from GitHub and the\ncontainer base images from Docker Hub, so it needs to be online.\n\ngithub.com could not be reached.\n\nConnect to a network (Wi-Fi or Ethernet), then run this again — or\nfrom a terminal:  sudo install-sysible\n\nNothing has been installed."
+  exit 1; }
+say "  online."
 
 # ---- choose which builds to install --------------------------------------
+# WANT = the apps to bring up; SLOP=1 also brings up the gateway that fronts them.
 WANT=""
+SLOP=0
 if [ "$#" -gt 0 ]; then
   for a in "$@"; do
     case "$a" in
-      all)                 WANT="controller slep connect" ;;
+      all)                     WANT="controller slep connect" ;;
+      # 'slop' = the whole suite behind the single SLOP front door: it needs all
+      # three apps, so select them too.
+      slop)                    WANT="controller slep connect"; SLOP=1 ;;
       controller|slep|connect) WANT="$WANT $a" ;;
-      *) die "unknown build '$a' (choose: controller slep connect all)" ;;
+      *) die "unknown build '$a' (choose: controller slep connect all slop)" ;;
     esac
   done
-elif command -v whiptail >/dev/null 2>&1 && [ -t 0 ] && [ -t 1 ]; then
-  CHOICE="$(whiptail --backtitle "Sysible Server" --title " Install Sysible CE " \
-    --checklist "\nPick the Sysible builds to install on this server.\nEach runs as a container; manage them later with 'sysible_ctl'.\n\n  [SPACE] toggle   [TAB] to buttons   [ENTER] confirm\n" \
-    16 74 3 \
+elif _interactive; then
+  CHOICE="$(whiptail --backtitle "$_EDITION" --title " Install Sysible CE " \
+    --checklist "\nPick what to install. Each app runs as a container; manage them\nlater with 'sysible_ctl'. Tick SLOP to also put the single front door\n(https://slop.lan/) in front of all three.\n\n  [SPACE] toggle   [TAB] to buttons   [ENTER] confirm\n" \
+    18 76 4 \
     controller "Sysible Controller — fleet management console" on \
     slep       "Sysible LEP — infra automation (Terraform/Ansible/Salt)" on \
     connect    "Sysible Connect — browser terminal workspace" on \
+    slop       "SLOP gateway — one URL/login in front of all three" on \
     3>&1 1>&2 2>&3)" || { say "Cancelled."; exit 0; }
-  WANT="$(printf '%s' "$CHOICE" | tr -d '"')"
-  [ -n "$WANT" ] || { say "Nothing selected."; exit 0; }
+  CHOICE="$(printf '%s' "$CHOICE" | tr -d '"')"
+  [ -n "$CHOICE" ] || { say "Nothing selected."; exit 0; }
+  for a in $CHOICE; do
+    case "$a" in
+      slop) SLOP=1 ;;
+      *)    WANT="$WANT $a" ;;
+    esac
+  done
+  # The gateway only makes sense in front of the apps, so if SLOP is ticked make
+  # sure all three are installed regardless of what else was checked.
+  [ "$SLOP" -eq 1 ] && WANT="controller slep connect"
 else
   # No whiptail / not a TTY: default to everything.
   WANT="controller slep connect"
 fi
 
-repo_for() { case "$1" in controller) echo "$CTL_REPO" ;; slep) echo "$SLEP_REPO" ;; connect) echo "$CONNECT_REPO" ;; esac; }
+repo_for() { case "$1" in controller) echo "$CTL_REPO" ;; slep) echo "$SLEP_REPO" ;; connect) echo "$CONNECT_REPO" ;; slop) echo "$SLOP_REPO" ;; esac; }
 dirname_for() { basename "$(repo_for "$1")"; }
-envvar_for() { case "$1" in controller) echo SYSIBLE_CONTROLLER_DIR ;; slep) echo SYSIBLE_SLEP_DIR ;; connect) echo SYSIBLE_CONNECT_DIR ;; esac; }
+envvar_for() { case "$1" in controller) echo SYSIBLE_CONTROLLER_DIR ;; slep) echo SYSIBLE_SLEP_DIR ;; connect) echo SYSIBLE_CONNECT_DIR ;; slop) echo SYSIBLE_SLOP_DIR ;; esac; }
 
 mkdir -p "$SRC_DIR"
 
@@ -83,7 +202,7 @@ clone_one() {
 # The Controller checkout ships the unified sysible_ctl. Ensure it's present (clone
 # the Controller even if not selected — it's the source of the CLI) and installed.
 CTL_DIR="$SRC_DIR/$(dirname_for controller)"
-clone_one controller
+clone_one controller || die "could not clone the Controller repo (check network/DNS) — nothing was installed."
 if [ -x "$CTL_DIR/deploy/sysible_ctl" ]; then
   ln -sf "$CTL_DIR/deploy/sysible_ctl" /usr/local/bin/sysible_ctl
   say "Installed sysible_ctl -> /usr/local/bin/sysible_ctl"
@@ -92,17 +211,101 @@ else
 fi
 
 # ---- bring up each selected build ----------------------------------------
+# Best-effort: one app failing to clone or build NEVER stops the others; failures
+# are collected and reported at the end instead of aborting (and closing) the run.
+FAILED=""
 for p in $WANT; do
-  clone_one "$p"
-  _dir="$SRC_DIR/$(dirname_for "$p")"
-  _var="$(envvar_for "$p")"
   say
   say "============================================================"
-  say " Bringing up: $p"
+  say " $p — cloning the code, then building + starting its container(s)"
   say "============================================================"
+  if ! clone_one "$p"; then
+    FAILED="$FAILED $p(clone)"; _warn "  could not clone $p — skipping it."; continue
+  fi
+  _dir="$SRC_DIR/$(dirname_for "$p")"
+  _var="$(envvar_for "$p")"
   # SYSIBLE_<P>_DIR lets sysible_ctl find the checkout before any container exists.
-  env "$_var=$_dir" sysible_ctl "$p" up
+  if env "$_var=$_dir" sysible_ctl "$p" up; then
+    say "  $p is up."
+  else
+    FAILED="$FAILED $p"; _warn "  $p did not come up — continuing with the rest (scroll up for the error)."
+  fi
 done
 
+# ---- bring up the SLOP gateway (optional) --------------------------------
+# The gateway fronts the three apps behind one domain/TLS/portal. It's a separate
+# container stack (just Caddy + the portal) managed by the same sysible_ctl, and
+# it proxies to the apps on the host ports they already publish — so it comes up
+# AFTER the apps.
+if [ "$SLOP" -eq 1 ]; then
+  say
+  say "============================================================"
+  say " SLOP gateway — the single front door in front of the apps"
+  say "============================================================"
+  if clone_one slop && env SYSIBLE_SLOP_DIR="$SRC_DIR/$(dirname_for slop)" sysible_ctl slop up; then
+    say "  SLOP gateway is up."
+  else
+    FAILED="$FAILED slop-gateway"; _warn "  the SLOP gateway did not come up (scroll up for the error)."
+  fi
+
+  # SLOP is the "everything" install, so also add the optional, separately-
+  # licensed software that the ISO can't bundle: the marketplace catalog
+  # (HashiCorp tools + AWS CLI) and Obsidian. Non-interactive — accept the
+  # HashiCorp BUSL notice up front (this is the explicit "install all" path).
+  # Each is best-effort: a vendor download failing never aborts the whole run.
+  say
+  say "============================================================"
+  say " Installing all the optional software this edition offers"
+  say "============================================================"
+  # Obsidian is in the catalog like everything else. It used to be a separate call
+  # to /usr/local/bin/sysible-install-obsidian — a script that was REMOVED when the
+  # work moved into the sysible-obsidian-installer package. The call was guarded by
+  # `command -v`, so on every workstation that did not already have that package the
+  # test failed, the branch was skipped, and Obsidian was never installed and never
+  # mentioned. Going through the catalog installs the package, whose first-boot
+  # service does the vendor download (it cannot be done from a postinst — that is a
+  # nested dpkg run) and retries on the next boot if the network is down.
+  if command -v sysible-tools >/dev/null 2>&1; then
+    # ASK the catalog what this edition offers instead of naming the tools here.
+    # Server deliberately carries no Obsidian — a note-taking GUI on a headless box
+    # — so a hard-coded list would make a correct Server install report a failure
+    # for something it was right not to have. It also means a tool added to the
+    # catalog is installed here without touching this script.
+    # `|| true`: this runs LAST, after everything is installed. Under `set -e` the
+    # assignment inherits the pipeline's status, so a catalog that errors (or an
+    # awk that is somehow missing) would abort the whole run at the finish line
+    # instead of reporting one skipped step.
+    _tools="$(sysible-tools list 2>/dev/null \
+              | awk 'NR > 1 && NF && $1 != "Already" { printf "%s ", $1 }' || true)"
+    if [ -n "$_tools" ]; then
+      say "  offered here: $_tools"
+      # shellcheck disable=SC2086  # a deliberate word split: one arg per tool
+      SYSIBLE_TOOLS_ASSUME_YES=1 sysible-tools install $_tools \
+        || { FAILED="$FAILED optional-software"
+             _warn "  one or more optional tools failed to install (see above)."; }
+    else
+      FAILED="$FAILED optional-software"
+      _warn "  could not read the optional-software catalog — nothing extra installed."
+      _warn "  Try it directly:  sudo sysible-tools"
+    fi
+  else
+    FAILED="$FAILED optional-software"
+    _warn "  sysible-tools is not installed, so the optional software (HashiCorp"
+    _warn "  tools, AWS CLI, and Obsidian where the edition offers it) was SKIPPED."
+    _warn "  Install it later with:  sudo sysible-tools"
+  fi
+fi
+
 say
-say "Done. Manage everything with:  sysible_ctl status   |   sysible_ctl update all"
+if [ -n "$FAILED" ]; then
+  _warn "Finished WITH PROBLEMS — these did not come up:$FAILED"
+  _warn "Inspect with 'sysible_ctl status', retry one with e.g. 'sysible-install <name>',"
+  _warn "and check the errors scrolled above (usually network, DNS, or a Docker build)."
+else
+  say "All done — the code is cloned under $SRC_DIR and everything is running in containers."
+fi
+if [ "$SLOP" -eq 1 ] && [ -z "$FAILED" ]; then
+  say "One front door is up: https://slop.lan/  (point slop.lan + the"
+  say "controller./slep./connect. subdomains at this host — DNS or /etc/hosts)."
+fi
+say "Manage everything with:  sysible_ctl status   |   sysible_ctl update all"
