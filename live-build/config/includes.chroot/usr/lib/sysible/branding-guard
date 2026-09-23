@@ -47,12 +47,62 @@ fi
 
 # 2) GRUB entry titles — grub-common upgrades restore the stock 10_linux, turning
 #    "Sysible Server" back into "Sysible Server GNU/Linux". Re-apply the one-line
-#    patch, and only regenerate grub.cfg if we actually changed something.
+#    patch; grub.cfg is regenerated once, below, if anything here changed.
+grub_changed=0
 if [ -f /etc/grub.d/10_linux ] && \
    grep -q '${GRUB_DISTRIBUTOR} GNU/Linux' /etc/grub.d/10_linux; then
     sed -i 's|${GRUB_DISTRIBUTOR} GNU/Linux|${GRUB_DISTRIBUTOR}|g' /etc/grub.d/10_linux
-    command -v update-grub >/dev/null 2>&1 && update-grub >/dev/null 2>&1 || true
+    grub_changed=1
     echo "sysible-guard: GRUB titles re-patched"
+fi
+
+# 2b) The boot menu's PRODUCT NAME. Every entry in the GRUB menu is literally
+#     GRUB_DISTRIBUTOR, which we set in our own drop-in — and that is exactly why
+#     it went unfixed for so long: the file belongs to us, so no package upgrade
+#     ever restores it, and correcting the source only fixes machines installed
+#     from a LATER image. This repo was briefly rebranded to "Sysible Workstation"
+#     (b0715be) and rebranded back a day later (8a2f18e); every machine installed
+#     from an image built in between still boots a menu naming the wrong product,
+#     and always would have. Re-assert the value here, where it reaches machines
+#     that are already out there.
+#
+#     grub-mkconfig sources /etc/default/grub first and then the drop-ins in
+#     lexical order, so the LAST assignment wins: ours must be it. A drop-in
+#     sorting after ours that sets a DIFFERENT Sysible product is corrected too.
+#     An assignment naming something that is not ours is left alone — it is not
+#     branding drift, and rewriting another vendor's entry would be wrong.
+GRUB_WANT='GRUB_DISTRIBUTOR="Sysible Server"'
+GRUB_DROPIN=/etc/default/grub.d/20_sysible-theme.cfg
+if [ -d /etc/default/grub.d ]; then
+    if [ ! -f "$GRUB_DROPIN" ]; then
+        printf '%s\n' "$GRUB_WANT" > "$GRUB_DROPIN"
+        grub_changed=1
+        echo "sysible-guard: GRUB distributor drop-in restored ($GRUB_DROPIN)"
+    elif ! grep -qx "$GRUB_WANT" "$GRUB_DROPIN"; then
+        if grep -q '^[[:space:]]*GRUB_DISTRIBUTOR=' "$GRUB_DROPIN"; then
+            sed -i "s|^[[:space:]]*GRUB_DISTRIBUTOR=.*|$GRUB_WANT|" "$GRUB_DROPIN"
+        else
+            printf '%s\n' "$GRUB_WANT" >> "$GRUB_DROPIN"
+        fi
+        grub_changed=1
+        echo "sysible-guard: GRUB distributor re-branded in $GRUB_DROPIN"
+    fi
+    for _d in /etc/default/grub.d/*.cfg; do
+        [ -f "$_d" ] || continue
+        [ "$_d" = "$GRUB_DROPIN" ] && continue
+        grep -q '^[[:space:]]*GRUB_DISTRIBUTOR=.*Sysible' "$_d" || continue
+        grep -q "$GRUB_WANT" "$_d" && continue
+        sed -i "s|^[[:space:]]*GRUB_DISTRIBUTOR=.*|$GRUB_WANT|" "$_d"
+        grub_changed=1
+        echo "sysible-guard: GRUB distributor re-branded in $_d"
+    done
+fi
+
+# One regeneration for both, and only when something actually changed —
+# update-grub on every boot would be slow for nothing.
+if [ "$grub_changed" = 1 ] && command -v update-grub >/dev/null 2>&1; then
+    update-grub >/dev/null 2>&1 || true
+    echo "sysible-guard: boot menu regenerated"
 fi
 
 exit 0

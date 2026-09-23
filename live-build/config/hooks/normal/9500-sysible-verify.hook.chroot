@@ -51,6 +51,42 @@ done < "$BMAN"
 [ "$checked" -gt 0 ] || fail "branding manifest matched no in-image assets"
 echo "sysible-verify: OK — $checked branded assets match the canonical mark (incl. GRUB boot logo)."
 
+# 2b) Boot-menu WORDING. Section 2 proves the boot menu's ARTWORK is ours; nothing
+# proved its TEXT was. Every entry in the GRUB menu is literally
+# GRUB_DISTRIBUTOR, and the only thing that has ever got that wrong was us: this
+# repo was rebranded to "Sysible Workstation" (b0715be) and back a day later
+# (8a2f18e), and the images built in between shipped a boot menu naming the wrong
+# product. The build did not notice, because nothing looked.
+#
+# Compute the value the way grub-mkconfig does — /etc/default/grub first, then the
+# drop-ins in lexical order, last assignment wins — rather than grepping our own
+# file, so a later drop-in that overrides us is caught too.
+_dist=$(
+    set +e
+    GRUB_DISTRIBUTOR=
+    [ -r /etc/default/grub ] && . /etc/default/grub
+    for _f in /etc/default/grub.d/*.cfg; do [ -r "$_f" ] && . "$_f"; done
+    printf '%s' "$GRUB_DISTRIBUTOR"
+)
+[ "$_dist" = "Sysible Server" ] \
+    || fail "the GRUB boot menu would read '$_dist', not 'Sysible Server' (GRUB_DISTRIBUTOR, from /etc/default/grub + grub.d)"
+# The theme's own visible text (its footer tagline) ships in the same drop.
+_theme=/boot/grub/themes/sysible/theme.txt
+if [ -f "$_theme" ] && grep -qi 'sysible workstation' "$_theme"; then
+    fail "$_theme names Sysible Workstation — this is the Server image"
+fi
+# ...and the repair path for machines ALREADY installed with the wrong name must
+# stay alive. A correct image does nothing for a box installed from a bad one:
+# the drop-in belongs to us, so no upgrade replaces it, and only the guard ever
+# will. Losing that section would strand every such machine silently.
+_bg=/usr/lib/sysible/branding-guard
+[ -f "$_bg" ] || fail "the branding guard is missing ($_bg)"
+grep -q 'GRUB_DISTRIBUTOR="Sysible Server"' "$_bg" \
+    || fail "$_bg no longer re-asserts GRUB_DISTRIBUTOR — a machine already installed with the wrong product name on its boot menu would never be corrected"
+grep -q 'update-grub' "$_bg" \
+    || fail "$_bg no longer regenerates grub.cfg — a corrected drop-in is not a corrected boot menu"
+echo "sysible-verify: OK — the boot menu reads '$_dist', and the guard keeps it that way."
+
 # 10) The AI model feature must stay GONE.
 # `sysible ai` / `sai`, the /etc/profile.d helper and the bundled Ollama runtime
 # were removed on request. This asserts the IMAGE is actually free of them, not

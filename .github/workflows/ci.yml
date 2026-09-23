@@ -40,6 +40,24 @@ jobs:
       - name: Check live-build config
         run: python3 scripts/check-config.py
 
+  tests:
+    # tests/ drives the REAL shell helpers against a sandboxed PATH of fakes, and
+    # — for the branding guard — against a throwaway /etc bind-mounted over the
+    # real one. They existed but nothing ran them, so they were documentation.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the shell-helper tests
+        # As root: the mount namespace the branding-guard tests need is not
+        # available to the runner user on 24.04 (AppArmor restricts unprivileged
+        # user namespaces). SYSIBLE_REQUIRE_NS=1 makes an unavailable namespace a
+        # FAILURE rather than a silent skip.
+        run: |
+          python3 -m venv /tmp/pytest-venv
+          /tmp/pytest-venv/bin/pip install --quiet --disable-pip-version-check pytest
+          sudo -E SYSIBLE_REQUIRE_NS=1 /tmp/pytest-venv/bin/python -m pytest
+
   build:
     runs-on: ubuntu-latest
     # Same reason as config-lint: bound it so a stalled apt fails fast.
