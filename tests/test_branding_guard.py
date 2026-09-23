@@ -33,11 +33,21 @@ OS_RELEASE = 'PRETTY_NAME="Sysible Server"\nNAME="Sysible Server"\nID=sysible\n'
 MOTD = "\nSysible Server — engineering & automation platform\n"
 
 
+# As root, ask for a mount namespace and nothing else. The extra --map-root-user
+# a non-root run needs creates an UNPRIVILEGED user namespace, and Ubuntu 24.04
+# confines those with AppArmor: the namespace is created, then the first exec
+# inside it is denied (126, "Permission denied") — which is what broke this job
+# on the runner even though it was already running as root.
+UNSHARE = ["unshare", "--mount"] if os.geteuid() == 0 else ["unshare", "--map-root-user", "--mount"]
+
+
 def _have_namespaces() -> bool:
     if not shutil.which("unshare"):
         return False
+    # Probe with a real exec, not `true` as a builtin: creating the namespace and
+    # being allowed to run something in it are two different permissions.
     r = subprocess.run(
-        ["unshare", "-rm", "true"], capture_output=True, timeout=30
+        UNSHARE + ["/bin/sh", "-c", "exec /bin/true"], capture_output=True, timeout=30
     )
     return r.returncode == 0
 
@@ -101,7 +111,7 @@ class Sandbox:
         env["PATH"] = f"{self.bin}:{env['PATH']}"
         env["FAKE_LOG"] = str(self.log)
         return subprocess.run(
-            ["unshare", "-rm", "sh", "-c", script],
+            UNSHARE + ["sh", "-c", script],
             capture_output=True, text=True, env=env, timeout=120,
         )
 
