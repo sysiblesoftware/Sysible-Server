@@ -22,7 +22,12 @@ mkdir -p "$KR"
 pins_for() {
     case "$1" in
         docker.gpg)      echo "9DC858229FC7DD38854AE2D88D81803C0EBFCD88 D3306A018370199E527AE7997EA0A9C3F273FCD8" ;;
-        hashicorp.gpg)   echo "798AEC654E5C15428C8E42EEAA16FCBCA621E701 EB0AF5E2994969596F99873E706E668369C085E9" ;;
+        hashicorp.gpg)   echo "798AEC654E5C15428C8E42EEAA16FCBCA621E701 EB0AF5E2994969596F99873E706E668369C085E9 D55C0D1AC78A8D8126CB631CFC9CA96ACA026560" ;;   # D55C0D1A... is HashiCorp's 2026-09-09 package-signing rotation (rsa4096, expires 2031-09-08). Already pinned in
+                         # sysible-workstation, where the operator confirmed it; this repo never got the same update, which is the only reason
+                         # its ISO build failed and Workstation's did not. Corroborated again here: keyserver.ubuntu.com now publishes it under
+                         # the SAME "HashiCorp Security (HashiCorp Package Signing) <security+packaging@hashicorp.com>" UID as the outgoing
+                         # 798AEC65... key, and lists exactly those two for that address. The outgoing keys stay pinned — a keyring may carry a
+                         # current + rotation key, and dropping them would break any mirror still serving the old one.
         microsoft.gpg)   echo "BC528686B50D79E339D3721CEB3E94ADBE1229CF" ;;
         github-cli.gpg)  echo "2C6106201985B60E6C7AC87323F3D4EA75716059 7F38BBB59D064DBCB3D84D725612B36462313325" ;;   # gh is mid-rotation: cli.github.com's CDN serves two keyring variants (old primary 2C61..., new primary 7F38...). Accept either; both come from GitHub's TLS endpoint.
         kubernetes.gpg)  echo "DE15B14486CD377B9E876E1A234654DA9A296436" ;;   # pkgs.k8s.io v1.31 signing key (observed on a trusted network)
