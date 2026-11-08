@@ -80,18 +80,53 @@ widget_class "*GtkProgress*" style : highest "sysible-progress"
 class        "*GtkProgress*" style : highest "sysible-progress"
 '
 
+# The TEXT installer's palette. Everything above this point only ever reached
+# the GRAPHICAL installer: the banner swap needs usr/share/graphics and the
+# gtkrc append needs a gtkrc, and a text-mode initrd has neither. So d-i's newt
+# frontend stayed stock Debian — blue background, grey dialogs, red highlights.
+#
+# That is not a corner case. This hook's own notes record that arm64 ships NO
+# graphical installer at all, so on arm64 the unbranded text installer is the
+# ONLY installer anyone ever sees.
+#
+# libnewt reads NEWT_COLORS from the environment, and /sbin/debian-installer
+# sources every /lib/debian-installer-startup.d/* script before starting the
+# frontend — so a script dropped there sets the palette for the whole install.
+# The colours are the same ones sysible-tools already uses on the installed
+# system, so the installer and the system it installs look like one product.
+SYSIBLE_NEWT_COLORS='root=,black
+window=,black
+border=green,black
+title=green,black
+button=black,green
+compactbutton=green,black
+actbutton=black,green
+checkbox=white,black
+actcheckbox=black,green
+entry=white,black
+label=green,black
+listbox=white,black
+actlistbox=black,green
+sellistbox=black,green
+textbox=white,black
+acttextbox=black,green
+roottext=green,black
+emptyscale=,black
+fullscale=,green
+helpline=green,black'
+
 echo "sysible-installer: preseed='${PRESEED:-<unset>}' banner='${BANNER:-<unset>}'"
 echo "sysible-installer: installer trees found:"
 find . -maxdepth 3 -type d -name 'install*' 2>/dev/null | sed 's/^/    /' || true
 
-patched=0; preseeded=0; branded=0
+patched=0; preseeded=0; branded=0; paletted=0
 # BY PATH, not by content — a text-mode installer initrd carries no graphics.
 for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null); do
     gzip -t "$initrd" 2>/dev/null || continue
     work=$(mktemp -d)
     gzip -dc "$initrd" 2>/dev/null | ( cd "$work" && cpio -idm --quiet 2>/dev/null ) || { rm -rf "$work"; continue; }
 
-    did_preseed=no; did_brand=no
+    did_preseed=no; did_brand=no; did_palette=no
 
     # 1) preseed at the initrd root — auto-loaded by d-i, no boot argument.
     if [ -n "$PRESEED" ] && [ -f "$PRESEED" ]; then
@@ -110,13 +145,34 @@ for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null)
     done
     [ "$did_brand" = yes ] && branded=$((branded + 1))
 
+    # 2b) Palette for the TEXT frontend. Applies to EVERY installer initrd,
+    #     including the ones with no graphics at all — those are the stock-blue
+    #     ones. Written two ways because only one of them needs to work:
+    #     a startup.d script (sourced by /sbin/debian-installer before the
+    #     frontend starts) and /etc/newt/palette with NEWT_COLORS_FILE.
+    mkdir -p "$work/lib/debian-installer-startup.d" "$work/etc/newt" 2>/dev/null || true
+    if [ -d "$work/lib/debian-installer-startup.d" ]; then
+        printf '%s\n' "$SYSIBLE_NEWT_COLORS" > "$work/etc/newt/palette" 2>/dev/null || true
+        {
+            echo '#!/bin/sh'
+            echo '# Sysible: brand the text installer. Sourced by /sbin/debian-installer.'
+            echo "NEWT_COLORS='$SYSIBLE_NEWT_COLORS'"
+            echo 'export NEWT_COLORS'
+            echo 'NEWT_COLORS_FILE=/etc/newt/palette'
+            echo 'export NEWT_COLORS_FILE'
+        } > "$work/lib/debian-installer-startup.d/S99sysible-palette" 2>/dev/null \
+            && chmod 0755 "$work/lib/debian-installer-startup.d/S99sysible-palette" 2>/dev/null \
+            && { did_palette=yes; paletted=$((paletted + 1)); }
+    fi
+
     ( cd "$work" && find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 ) > "$initrd.new" \
         && mv -f "$initrd.new" "$initrd"
     rm -rf "$work"
-    echo "sysible-installer: patched $initrd (preseed=$did_preseed branding=$did_brand)"
+    echo "sysible-installer: patched $initrd (preseed=$did_preseed branding=$did_brand palette=$did_palette)"
     patched=$((patched + 1))
 done
-echo "sysible-installer: $patched installer initrd(s): $preseeded preseeded, $branded branded."
+echo "sysible-installer: $patched installer initrd(s): $preseeded preseeded, $branded branded, $paletted palette(s)."
+[ "$paletted" = 0 ] && echo "sysible-installer: WARNING — no initrd got the text palette; the installer will look like stock Debian." >&2
 [ "$preseeded" = 0 ] && echo "sysible-installer: WARNING — NO initrd received the preseed; the installed system may have no bootloader." >&2
 
 # 3) Make install/gtk/* real wherever the menu may point at it.
