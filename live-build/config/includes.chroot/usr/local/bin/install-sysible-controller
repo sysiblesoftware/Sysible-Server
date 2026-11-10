@@ -1,5 +1,0 @@
-#!/bin/sh
-# Back-compat shim: the Controller installer is now part of the unified installer,
-# which can install any/all Sysible CE builds. This just installs the Controller.
-# Run `install-sysible` (no args) for the full menu, or `install-sysible all`.
-exec install-sysible controller "$@"
