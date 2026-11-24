@@ -57,6 +57,37 @@ jobs:
           cd live-build
           ./build.sh
 
+      # The one thing a failed build could not tell anyone. A dependency failure
+      # lands ~4 minutes in, and the lines that say WHY -- whether the vendor
+      # repo was written, whether its key was trusted, whether apt could reach
+      # it -- are thousands of lines earlier, where nothing reading the tail of
+      # the log will ever see them. This prints that state at the END, on
+      # failure only, so the reason is wherever the reader is.
+      - name: Why the build failed (diagnostics)
+        if: failure()
+        run: |
+          cd live-build
+          echo "=== config/archives (vendor repos, added BEFORE packages install) ==="
+          ls -la config/archives/ 2>&1 || echo "  MISSING — nothing configured the vendor repos"
+          for f in config/archives/*.list.chroot; do
+            [ -e "$f" ] && { echo "--- $f ---"; cat "$f"; }
+          done 2>/dev/null
+          for f in config/archives/*.key.chroot; do
+            [ -e "$f" ] && { echo "--- $f ---"; file -b "$f"; head -c 40 "$f"; echo; }
+          done 2>/dev/null
+          echo
+          echo "=== did any of it reach the chroot? ==="
+          ls -la chroot/etc/apt/sources.list.d/ 2>&1 | head -20
+          cat chroot/etc/apt/sources.list.d/docker.list 2>&1 || echo "  no docker.list in the chroot"
+          ls -la chroot/etc/apt/trusted.gpg.d/ 2>&1 | head -20
+          echo
+          echo "=== what apt in the chroot thinks of docker-ce ==="
+          chroot chroot apt-cache policy docker-ce 2>&1 | head -20 || echo "  (could not query the chroot)"
+          echo
+          echo "=== apt warnings/errors from the chroot's last update ==="
+          grep -hoE "(W:|E:|Err:)[^\n]{0,160}" chroot/var/log/apt/term.log 2>/dev/null | tail -25 || true
+          ls chroot/var/lib/apt/lists/ 2>/dev/null | grep -i docker || echo "  NO docker index in apt lists — the repo was never fetched"
+
       - name: Name the ISO
         # live-build emits a generic live-image-<arch>.hybrid.iso; rename it to the
         # product name so the artifact, the release parts, and the file a user
