@@ -143,14 +143,38 @@ echo "Debian toolkit: $(grep -c . config/package-lists/sysible-toolkit.list.chro
 # present in the target after unpackfs and (b) available in the offline pool for
 # the installer's grub step. Arch-selected here (the list is shared across arches,
 # and grub-efi-amd64 has no arm64 candidate / vice-versa, which would abort the build).
+# SECURE BOOT: the *-signed packages are what let the ISO boot on a machine that
+# ships with Secure Boot ENABLED, which is most of them. shim-signed is
+# Microsoft-signed, so the firmware trusts it with no key enrollment; it
+# chainloads grub-efi-<arch>-signed (Debian-signed). live-build detects these in
+# the chroot and lays shim down as the default EFI binary with the signed grub
+# beside it. With them absent the ISO is simply REJECTED until someone turns
+# Secure Boot off in firmware -- which is the state this image shipped in, and
+# why the honest answer to "BIOS or Secure Boot?" had to be "not Secure Boot".
+#
+# Sysible Workstation has carried exactly this block for some time. Same build
+# system, same file, same reasoning; Server never got it. Servers ship with
+# Secure Boot enabled at least as often as laptops do. Lifted verbatim rather
+# than reinvented. Macs and Secure-Boot-off machines boot the same shim -> grub
+# path, so it is strictly additive. mokutil is for managing keys if ever needed.
+#
+# 32-BIT UEFI: grub-efi-ia32-bin is here because firmware bitness is NOT CPU
+# bitness. An amd64 machine behind 32-bit EFI (some VMs, Bay Trail, older Macs)
+# makes the installer ask for the ia32 flavour, and with nothing in the offline
+# pool the install stops dead at "The 'grub-efi-ia32' package failed to install
+# into /target/". Reported from exactly that. The -bin package carries the
+# modules grub-install needs and coexists with grub-efi-amd64; only the
+# METApackages conflict, which is the same reason grub-pc-bin is here and
+# grub-pc is not.
 if [ "$ARCH" = "arm64" ]; then
-    printf '%s\n' grub-efi-arm64 grub-efi-arm64-bin grub-common \
+    printf '%s\n' grub-efi-arm64 grub-efi-arm64-bin grub-efi-arm64-signed \
+                  shim-signed mokutil grub-common \
         > config/package-lists/sysible-grub.list.chroot
 else
-    # amd64: grub-efi-amd64 covers UEFI targets (the common case, incl. VMs).
-    # grub-pc-bin coexists with grub-efi (only the grub-pc metapackage conflicts)
-    # so BIOS grub-install has its modules in the pool too.
-    printf '%s\n' grub-efi-amd64 grub-efi-amd64-bin grub-pc-bin grub-common \
+    # amd64: grub-efi-amd64 covers 64-bit UEFI targets (the common case, incl.
+    # VMs), grub-efi-ia32-bin the 32-bit-firmware ones, grub-pc-bin BIOS.
+    printf '%s\n' grub-efi-amd64 grub-efi-amd64-bin grub-efi-amd64-signed \
+                  shim-signed mokutil grub-efi-ia32-bin grub-pc-bin grub-common \
         > config/package-lists/sysible-grub.list.chroot
 fi
 echo "Target bootloader packages: $(tr '\n' ' ' < config/package-lists/sysible-grub.list.chroot)"
