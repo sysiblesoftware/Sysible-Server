@@ -130,6 +130,18 @@ awk '
     > config/package-lists/sysible-toolkit.list.chroot
 echo "Debian toolkit: $(grep -c . config/package-lists/sysible-toolkit.list.chroot) packages (vendor tools via hook)."
 
+# --- a trust store the shipped image actually owns -------------------------
+# The staged build below copies the build container's CA bundle into the chroot
+# so apt can reach Docker's https repo, which is the only way the build gets
+# past it. That copy belongs to no package. This list makes dpkg install the
+# real ca-certificates during chroot_install-packages, which rewrites
+# /etc/ssl/certs/ca-certificates.crt from /usr/share/ca-certificates and lays
+# down the hash symlinks beside it -- so the image ships a store that
+# update-ca-certificates can maintain. Not inherited from the metapackage:
+# nothing in Docker's repo depends on ca-certificates, verified across
+# bookworm/stable from docker-ce 23.0.0 to 29.9.3.
+echo ca-certificates > config/package-lists/sysible-ca.list.chroot
+
 # --- make the TARGET bootloader installable offline -------------------------
 # The Debian Installer makes the freshly-partitioned target bootable with GRUB.
 # On an offline install it can only pull .debs from the ISO's own pool, and that
@@ -186,7 +198,8 @@ echo "Target bootloader packages: $(tr '\n' ' ' < config/package-lists/sysible-g
 # in, not generated, so they don't depend on where a given live-build keeps its
 # templates.
 lb clean --purge || true
-# CA CERTIFICATES, AT BOOTSTRAP TIME. This is what made the ISO unbuildable.
+# CA CERTIFICATES, BEFORE THE FIRST https REPO. This is what made the ISO
+# unbuildable, and it is invisible in the failure that reports it.
 #
 # Debian's own mirrors are plain http, so Docker's repo is the FIRST https
 # source the chroot ever sees -- and a freshly debootstrapped chroot has no CA
@@ -198,24 +211,24 @@ lb clean --purge || true
 #
 # So the index was never fetched, docker-ce had no candidate, and the build died
 # four minutes later on "Depends: docker-ce but it is not installable" with
-# nothing in ninety thousand lines connecting the two. Adding docker-ce as a
-# hard dependency is what turned a quietly-skipped vendor repo into a hard stop.
+# nothing in ninety thousand log lines connecting the two. Making docker-ce a
+# hard dependency is what turned a quietly-unreachable vendor repo into a stop.
 #
-# ca-certificates has to be in the chroot BEFORE lb_chroot_archives runs its apt
-# update. Package lists and hooks both run later, so the only stage early enough
-# is the debootstrap itself. LB_BOOTSTRAP_INCLUDE is read from the environment
-# by lb config, which is version-agnostic -- the --bootstrap-include FLAG does
-# not exist in every live-build.
+# Serving that repo over http:// is not a way out: download.docker.com answers
+# port 80 with a 301 to https, which apt follows into the same handshake.
+#
+# The store has to be in the chroot BEFORE lb_chroot_archives runs its apt
+# update. Package lists and hooks both run later, so the bootstrap is the only
+# stage early enough -- the fix itself is the staged build further down.
+# LB_BOOTSTRAP_INCLUDE is set as well, because a live-build that honours it
+# fixes this one stage earlier for free; it is deliberately NOT relied on. An
+# earlier attempt hard-failed the build when this value did not show up in
+# config/bootstrap -- having verified that against live-build 3.0 from Ubuntu
+# rather than the 2023 live-build the image is actually built with. They are
+# different programs, the file is not the same, and that guard broke the build
+# on its own, one minute in, before a chroot existed to inspect.
 export LB_BOOTSTRAP_INCLUDE="${LB_BOOTSTRAP_INCLUDE:+${LB_BOOTSTRAP_INCLUDE},}ca-certificates"
 lb config
-# Prove it landed. A silently-dropped value here costs a full build to discover,
-# and the failure it causes names a package rather than a certificate.
-grep -q "ca-certificates" config/bootstrap 2>/dev/null || {
-    echo "ERROR: ca-certificates did not reach config/bootstrap." >&2
-    echo "       The chroot would have no CA store, Docker's https repo would" >&2
-    echo "       fail its TLS handshake, and docker-ce would be uninstallable." >&2
-    exit 1; }
-echo "Bootstrap includes ca-certificates (Docker's repo is https)."
 # Absolute path to the Sysible installer banner, read by the binary hook
 # 9400-sysible-installer-branding.hook.binary (which patches the graphical
 # installer initrd IN the binary/ tree BEFORE the ISO is assembled — so the
@@ -225,6 +238,40 @@ export SYSIBLE_INSTALLER_BANNER="$ROOT/branding/installer/logo_installer.png"
 # Absolute path to the preseed, injected INTO the installer initrd by hook 9400 so
 # d-i auto-loads it without depending on the file=/cdrom/preseed.cfg boot argument.
 export SYSIBLE_PRESEED="$PWD/config/includes.binary/preseed.cfg"
+# Stage the build, so the chroot can be given a CA store in between debootstrap
+# and the first apt update. `lb build` is precisely `lb bootstrap; lb chroot; lb
+# binary; lb source`, and each stage guards itself with a stamp under .build/ --
+# so bootstrapping here means the `lb build` below resumes at `lb chroot`. That
+# is live-build's own resume mechanism, which is also what makes this safe to
+# re-run; it is not a trick played on it.
+$SUDO lb bootstrap
+[ -d chroot ] || {
+    echo "ERROR: lb bootstrap left no chroot/ to install a CA store into." >&2
+    exit 1; }
+# The build container's own store, refreshed by update-ca-certificates at the
+# top of this script. One file is enough for apt: on Debian this IS the system
+# trust store its GnuTLS reads.
+#
+# This copy is BUILD-TIME ONLY and must not be what the image ships. Nothing in
+# Docker's repo depends on ca-certificates -- checked across bookworm/stable
+# from docker-ce 23.0.0 to 29.9.3 -- so without the package list below the
+# finished image would carry an unowned bundle that update-ca-certificates can
+# never regenerate, with no /usr/share/ca-certificates behind it and no hash
+# symlinks in /etc/ssl/certs, which is the half of the trust store that
+# directory-based verifiers read. The real package installs during
+# chroot_install-packages and takes the path over.
+[ -s /etc/ssl/certs/ca-certificates.crt ] || {
+    echo "ERROR: the build container itself has no CA bundle to copy." >&2
+    exit 1; }
+$SUDO install -D -m 0644 /etc/ssl/certs/ca-certificates.crt \
+                         chroot/etc/ssl/certs/ca-certificates.crt
+$SUDO cmp -s /etc/ssl/certs/ca-certificates.crt \
+             chroot/etc/ssl/certs/ca-certificates.crt || {
+    echo "ERROR: the CA bundle did not reach the chroot. Docker's https repo" >&2
+    echo "       would fail its TLS handshake, and the build would stop four" >&2
+    echo "       minutes from now naming docker-ce instead of a certificate." >&2
+    exit 1; }
+echo "Chroot trusts $($SUDO grep -c 'END CERTIFICATE' chroot/etc/ssl/certs/ca-certificates.crt) CAs before the first https repo is added."
 $SUDO lb build
 
 # --- brand GRUB (UEFI, incl. arm64) in the finished ISO --------------------
