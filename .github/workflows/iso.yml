@@ -84,9 +84,19 @@ jobs:
           echo "=== what apt in the chroot thinks of docker-ce ==="
           chroot chroot apt-cache policy docker-ce 2>&1 | head -20 || echo "  (could not query the chroot)"
           echo
-          echo "=== apt warnings/errors from the chroot's last update ==="
-          grep -hoE "(W:|E:|Err:)[^\n]{0,160}" chroot/var/log/apt/term.log 2>/dev/null | tail -25 || true
-          ls chroot/var/lib/apt/lists/ 2>/dev/null | grep -i docker || echo "  NO docker index in apt lists — the repo was never fetched"
+          echo "=== apt lists: was the Docker index ever fetched? ==="
+          ls chroot/var/lib/apt/lists/ 2>/dev/null | grep -i docker || echo "  NO docker index — the repo was never fetched"
+          echo
+          echo "=== run apt-get update IN the chroot and see what it says about Docker ==="
+          # This is the question the last run could not answer: the repo line and
+          # the key are both in place, yet apt holds no index for it. Either the
+          # update never ran after they landed, or it ran and rejected the repo.
+          # Asking apt directly is the only thing that distinguishes the two.
+          cp /etc/resolv.conf chroot/etc/resolv.conf 2>/dev/null || true
+          chroot chroot apt-get update 2>&1 | grep -iE "docker|^Err|^W:|^E:|NO_PUBKEY|not signed" | head -30 \
+            || echo "  (apt-get update produced no Docker-related output at all)"
+          echo "--- and now? ---"
+          chroot chroot apt-cache policy docker-ce 2>&1 | head -8
 
       - name: Name the ISO
         # live-build emits a generic live-image-<arch>.hybrid.iso; rename it to the
