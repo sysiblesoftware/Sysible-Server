@@ -1,0 +1,72 @@
+#!/bin/sh
+# Sysible — first-boot install of the apps the operator chose DURING the install.
+#
+# The installer asks (preseed early_command -> sysible-ask-tools, question
+# sysible/apps) and records the answer in the target at /etc/sysible/apps.wanted.
+# This runs on the first networked boot and hands it to install-sysible.
+#
+# WHY NOT AT INSTALL TIME: the apps are cloned from GitHub and built from Docker
+# Hub images. A Debian install has no guaranteed network and an offline one has
+# none at all, so the work has to happen after the first boot that does.
+#
+# DELIBERATELY UNLIKE install-selected-tools, WHICH THIS IS MODELLED ON: that
+# script ends with an unconditional `rm -f` of its request file, with the comment
+# "even if a download failed, we don't want to retry on every boot". The result
+# is that a transient DNS blip on the first boot costs you the thing you asked
+# for, permanently and silently -- the selection is gone, nothing is installed,
+# and the only trace is a log nothing points you at. That was reported.
+#
+# So: a failure KEEPS the request and retries on the next boot, up to ATTEMPTS
+# times, and leaves a marker that sysible-hint reads out at login. Giving up is
+# allowed; giving up quietly is not.
+set -e
+WANT=/etc/sysible/apps.wanted
+TRIES=/var/lib/sysible/apps-firstboot.tries
+LOG=/var/log/sysible-apps-firstboot.log
+ATTEMPTS=${SYSIBLE_APPS_FIRSTBOOT_ATTEMPTS:-3}
+
+[ -s "$WANT" ] || exit 0
+
+mkdir -p "$(dirname "$TRIES")" 2>/dev/null || true
+exec >>"$LOG" 2>&1
+echo "=== sysible apps first-boot install: $(date -u 2>/dev/null) ==="
+
+sel=$(tr -d ' \n' < "$WANT")
+echo "selected during install: [$sel]"
+case "$sel" in
+  ''|none) echo "nothing selected"; rm -f "$WANT"; echo "=== done ==="; exit 0 ;;
+esac
+
+n=$(cat "$TRIES" 2>/dev/null || echo 0)
+case "$n" in ''|*[!0-9]*) n=0 ;; esac
+n=$((n + 1))
+echo "$n" > "$TRIES" 2>/dev/null || true
+echo "attempt $n of $ATTEMPTS"
+
+if ! command -v install-sysible >/dev/null 2>&1; then
+  echo "ERROR: install-sysible not found on PATH — nothing to run"
+  rm -f "$WANT"; echo "=== done ==="; exit 0
+fi
+
+# Non-interactive: the operator already chose this in the installer, so the
+# menu must not be shown to a boot with nobody watching it.
+if install-sysible "$sel"; then
+  echo "install-sysible $sel: OK"
+  rm -f "$WANT" "$TRIES"
+  echo "=== done ==="
+  exit 0
+fi
+
+echo "install-sysible $sel: FAILED (attempt $n of $ATTEMPTS)"
+if [ "$n" -ge "$ATTEMPTS" ]; then
+  # Out of attempts. Keep NOTHING pending, but leave something that speaks: the
+  # login hint reads this and says what to run.
+  echo "giving up after $n attempts — leaving a note for login"
+  mkdir -p /etc/sysible 2>/dev/null || true
+  printf '%s\n' "$sel" > /etc/sysible/apps-failed 2>/dev/null || true
+  rm -f "$WANT" "$TRIES"
+else
+  echo "keeping the request — it will be retried on the next boot"
+fi
+echo "=== done ==="
+exit 0

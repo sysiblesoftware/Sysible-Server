@@ -1,0 +1,24 @@
+[Unit]
+Description=Install the Sysible apps chosen during the install, on first boot
+Documentation=https://sysible.com
+# Only when the installer recorded a selection. install-selected-apps removes
+# the file once it succeeds (or once it has given up), so this is a one-shot on
+# the first networked boot and is skipped on every boot thereafter.
+ConditionPathExists=/etc/sysible/apps.wanted
+# Cloning from GitHub and building from Docker Hub both need the network.
+Wants=network-online.target
+After=network-online.target docker.service
+# The tools the operator picked (terraform, kubectl, ...) install from vendor apt
+# repos. Ordering after that unit keeps two long apt/network jobs off each
+# other's back on the very first boot rather than racing for dpkg's lock.
+After=sysible-tools-firstboot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/sysible/install-selected-apps
+# Cloning four repos and building containers is not a 90-second job.
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

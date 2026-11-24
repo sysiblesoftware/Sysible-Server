@@ -1,3 +1,9 @@
+sysible-cli (0.3.2) sysible; urgency=medium
+
+  * installer asks which Sysible apps to set up; first boot installs them
+
+ -- Sysible <maintainers@sysible.com>  Tue, 24 Nov 2026 18:55:03 +0000
+
 sysible-cli (0.3.1) sysible; urgency=medium
 
   * install-sysible: check Docker Hub in the preflight, not just GitHub

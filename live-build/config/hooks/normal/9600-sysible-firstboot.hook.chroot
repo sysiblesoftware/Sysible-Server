@@ -22,3 +22,13 @@ echo "sysible-firstboot: stripped baked SSH host keys; first-boot regen enabled"
 chmod 0755 /usr/lib/sysible/install-selected-tools 2>/dev/null || true
 systemctl enable sysible-tools-firstboot.service 2>/dev/null || true
 echo "sysible-firstboot: enabled first-boot install of installer-selected tools"
+
+# --- install the operator-selected Sysible apps on first boot --------------
+# Same shape as the tools above. The installer asks which apps to set up
+# (question sysible/apps) and records it at /etc/sysible/apps.wanted; this
+# oneshot hands that to install-sysible on the first networked boot. It was
+# reported that nothing on a headless server ever offers to do this -- the apps
+# only appeared if you already knew `install-sysible` existed.
+chmod 0755 /usr/lib/sysible/install-selected-apps 2>/dev/null || true
+systemctl enable sysible-apps-firstboot.service 2>/dev/null || true
+echo "sysible-firstboot: enabled first-boot install of installer-selected apps"
