@@ -84,6 +84,21 @@ jobs:
           echo "=== what apt in the chroot thinks of docker-ce ==="
           chroot chroot apt-cache policy docker-ce 2>&1 | head -20 || echo "  (could not query the chroot)"
           echo
+          echo "=== did the CA store survive to the failure? ==="
+          # Distinguishes the two ways the staged CA fix can come apart. The
+          # bundle is planted after `lb bootstrap`; if `lb build` re-ran
+          # debootstrap instead of honouring the .build/bootstrap stamp, it
+          # wiped the chroot and the bundle with it. Present-but-still-failing
+          # means something other than trust is wrong.
+          if [ -s chroot/etc/ssl/certs/ca-certificates.crt ]; then
+            echo "  present: $(grep -c 'END CERTIFICATE' chroot/etc/ssl/certs/ca-certificates.crt) CAs -- trust was NOT the problem this time"
+          elif [ -d chroot ]; then
+            echo "  GONE but chroot/ exists -- the bundle was removed or never landed"
+          else
+            echo "  no chroot/ at all -- the build died before or during bootstrap"
+          fi
+          ls -la .build/ 2>&1 | head -12
+          echo
           echo "=== apt lists: was the Docker index ever fetched? ==="
           ls chroot/var/lib/apt/lists/ 2>/dev/null | grep -i docker || echo "  NO docker index — the repo was never fetched"
           echo
