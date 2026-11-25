@@ -309,3 +309,21 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/sysiblesoftware/sysible-website/dispatches \
             -d '{"event_type":"iso-released"}'
+
+  # Push the Sysible packages to the apt repo's STABLE suite whenever a release
+  # is cut, in the same run. Without this the suite is only ever updated by a
+  # push to main, which publishes to DEV -- so an installed Server on the stable
+  # channel never saw a release's packages at all. See the long note at the top
+  # of publish.yml for why the `tags: ['v*']` trigger there cannot do this job.
+  publish-apt:
+    needs: iso
+    # Only for a release, and only ONCE -- a dispatch runs this workflow per
+    # arch, and the packages are Architecture: all, so amd64 carries it. A tag
+    # push produces a single run, which has no inputs.arch at all.
+    if: >-
+      (startsWith(github.ref, 'refs/tags/') || inputs.release) &&
+      (github.ref_type == 'tag' || inputs.arch == 'amd64')
+    uses: ./.github/workflows/publish.yml
+    with:
+      suite: stable
+    secrets: inherit

@@ -11,6 +11,34 @@ on:
         type: choice
         options: [dev, stable]
         default: stable
+  # Called by iso.yml at the end of a release build. THE TAG TRIGGER ABOVE
+  # CANNOT FIRE ON ITS OWN: the release is cut by softprops/action-gh-release
+  # using GITHUB_TOKEN, and GitHub deliberately does not start workflow runs
+  # from refs pushed with that token. So `tags: ['v*']` has never once run here
+  # either -- sysible-stable kept whatever it had while v1.0.0 through v1.0.3
+  # came and went, and every installed Server on the stable channel stayed
+  # frozen with it. Sysible Workstation hit this first and records the same
+  # note; Server was left with the trigger that cannot fire.
+  #
+  # A reusable workflow is not an event, so nothing suppresses it: iso.yml calls
+  # this in the SAME run that published the release.
+  workflow_call:
+    inputs:
+      suite:
+        description: 'Which suite to publish'
+        type: string
+        default: stable
+
+# Only ONE publish at a time. Every run restores the same aptly database from
+# R2, adds to it, and syncs it back, so two concurrent publishes interleave on
+# shared state: the second to finish persists a database that never saw the
+# first's packages. A push to main (dev) and the release's own stable publish of
+# the same commit overlap exactly this way.
+# cancel-in-progress is false: a publish that is partway through uploading must
+# finish, not be killed with the bucket half-updated.
+concurrency:
+  group: publish-apt
+  cancel-in-progress: false
 
 # Least privilege: this job only reads the repo and pushes to R2 (not to GitHub),
 # so the GITHUB_TOKEN needs no write scope.
