@@ -347,6 +347,7 @@ if [ -n "$ISO" ]; then
     WORK=$(mktemp -d)
     $SUDO xorriso -osirrox on -indev "$ISO" -extract /boot/grub/grub.cfg "$WORK/grub.cfg" 2>/dev/null || true
     $SUDO xorriso -osirrox on -indev "$ISO" -extract /isolinux/live.cfg "$WORK/live.cfg" 2>/dev/null || true
+    $SUDO xorriso -osirrox on -indev "$ISO" -extract /isolinux/install.cfg "$WORK/install.cfg" 2>/dev/null || true
     if [ -s "$WORK/grub.cfg" ]; then
         echo "-- grub.cfg BEFORE --"; grep -iE 'menuentry|background_image|Live system|Debian' "$WORK/grub.cfg" | head
         cp config/branding/splash.png "$WORK/sysible-splash.png"
@@ -474,6 +475,24 @@ open(p, 'w').write(s)
 PY
             MAP_LIVE="-map $WORK/live.cfg /isolinux/live.cfg"
         fi
+        # isolinux (BIOS) INSTALL entries. The graphical-installer default was
+        # applied to grub.cfg only, so a UEFI boot got the dark installer and a
+        # BIOS boot still got newt's blue dialogs -- reported from a real
+        # install, after the change was called done. live.cfg and install.cfg
+        # are different files; rebranding the first does nothing to the second.
+        MAP_INSTALL=""
+        if [ -s "$WORK/install.cfg" ]; then
+            echo "-- isolinux install.cfg BEFORE --"; grep -iE 'label|linux|initrd|default' "$WORK/install.cfg" | head
+            if python3 "$PWD/rewrite-installcfg.py" < "$WORK/install.cfg" > "$WORK/install.new"; then
+                mv "$WORK/install.new" "$WORK/install.cfg"
+                MAP_INSTALL="-map $WORK/install.cfg /isolinux/install.cfg"
+                echo "-- isolinux install.cfg AFTER --"; grep -iE 'label|linux|initrd|default' "$WORK/install.cfg" | head
+            else
+                echo "WARNING: could not rewrite isolinux install.cfg; BIOS install menu left stock" >&2
+            fi
+        else
+            echo "NOTE: no /isolinux/install.cfg on this ISO (expected on arm64, which has no isolinux)"
+        fi
         # Ship the Sysible GRUB theme onto the ISO's own boot filesystem so the
         # live menu (set theme=... above) can load it. The same theme dir is also
         # in the installed system via includes.chroot, so live + installed match.
@@ -485,6 +504,7 @@ PY
             -map "$WORK/sysible-splash.png" /boot/grub/sysible-splash.png \
             $MAP_THEME \
             $MAP_LIVE \
+            $MAP_INSTALL \
             -commit 2>&1 | tail -4
         # Post-commit verification is debug-only and MUST NOT fail the build.
         # On arm64 there is no isolinux, so extracting /isolinux/live.cfg errors;
