@@ -249,3 +249,30 @@ def test_the_installer_offers_what_the_post_install_menu_offers():
     assert "--checklist" in text, "the post-install menu is no longer a checklist"
     ids = {c.strip().split()[0] for c in _field("sysible/apps", "Choices").split(",")}
     assert ids == {"controller", "slep", "connect", "slop"}, ids
+
+
+def test_every_real_choice_parses_to_its_own_id(ask):
+    """Feed the ACTUAL choices from the template through the real parser, so
+    this keeps working when the labels are reworded -- which they have been
+    twice already."""
+    choices = [c.strip() for c in _field("sysible/apps", "Choices").split(",")]
+    for c in choices:
+        assert ask(c) == c.split()[0], f"{c!r} did not parse to its id"
+    # ...and two of the standalone ones together, which is the whole report.
+    standalone = [c for c in choices if not c.startswith("slop")]
+    pair = standalone[:2]
+    assert ask(", ".join(pair)) == " ".join(p.split()[0] for p in pair)
+
+
+def test_the_standalone_apps_say_so():
+    """Asked for: "controller, slep and connect options should be shown as
+    standalone apps not on top of slop". They are the same containers the
+    gateway runs, under the same names -- so they are an ALTERNATIVE to slop,
+    not an addition to it, and the label has to carry that."""
+    choices = [c.strip() for c in _field("sysible/apps", "Choices").split(",")]
+    for c in choices:
+        if c.split()[0] == "slop":
+            assert "gateway" in c.lower(), c
+        else:
+            assert "standalone" in c.lower(), (
+                f"{c!r} does not say it is the standalone app")

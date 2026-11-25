@@ -393,19 +393,41 @@ if len(sys.argv) > 2 and sys.argv[2] != '1':
 # initrds), each carrying file=/cdrom/preseed.cfg so the bootloader fixes apply.
 # default=0 stays the Live entry, so this NEVER auto-installs — the user picks it.
 if not re.search(r'(?m)^[^#\n]*\blinux\b[^\n]*/install[^\n]*vmlinuz', s):
-    s += (
-        '\n\n# --- Sysible installer entries (UEFI GRUB ships none by default) ---\n'
-        'menuentry "Install Sysible Server" --hotkey=i {\n'
-        '    set background_color=black\n'
-        '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
-        '    initrd /install/initrd.gz\n'
-        '}\n'
-        'menuentry "Install Sysible Server (graphical)" {\n'
-        '    set background_color=black\n'
-        '    linux  /install/gtk/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
-        '    initrd /install/gtk/initrd.gz\n'
-        '}\n'
-    )
+    # WHICH ONE IS "Install Sysible Server". The graphical installer, wherever
+    # it exists. These two entries render the SAME debconf questions through
+    # different frontends: gtk, and newt -- the blue 1990s dialogs. The obvious
+    # entry used to be the newt one, with graphical tucked underneath, so
+    # choosing the obvious thing got the ugly installer. Reported as "it should
+    # be only inside the debian style installer not a tui based menu".
+    #
+    # The kernel is SHARED (/install/vmlinuz, per the rewrite above); only the
+    # initrd differs. arm64 ships no gtk initrd at all, so there it gets ONE
+    # entry pointing at the text installer rather than a "(graphical)" entry
+    # that silently boots the text one -- which is what it used to offer.
+    gtk = len(sys.argv) > 2 and sys.argv[2] == '1'
+    entries = '\n\n# --- Sysible installer entries (UEFI GRUB ships none by default) ---\n'
+    if gtk:
+        entries += (
+            'menuentry "Install Sysible Server" --hotkey=i {\n'
+            '    set background_color=black\n'
+            '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
+            '    initrd /install/gtk/initrd.gz\n'
+            '}\n'
+            'menuentry "Install Sysible Server (text mode)" {\n'
+            '    set background_color=black\n'
+            '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
+            '    initrd /install/initrd.gz\n'
+            '}\n'
+        )
+    else:
+        entries += (
+            'menuentry "Install Sysible Server" --hotkey=i {\n'
+            '    set background_color=black\n'
+            '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
+            '    initrd /install/initrd.gz\n'
+            '}\n'
+        )
+    s += entries
     sys.stderr.write("build.sh: added active UEFI install entries (menu had none)\n")
 else:
     sys.stderr.write("build.sh: UEFI grub.cfg already has an active install entry\n")

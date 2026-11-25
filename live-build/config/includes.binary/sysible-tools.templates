@@ -17,24 +17,24 @@ Description: Optional software to install
 
 Template: sysible/apps
 Type: multiselect
-Choices: slop (one gateway in front of all three), controller (fleet console), slep (infra automation), connect (browser terminal)
-Default: slop (one gateway in front of all three)
+Choices: slop (all three behind one gateway), controller (standalone), slep (standalone), connect (standalone)
+Default: slop (all three behind one gateway)
 Description: Sysible software to set up on first boot
  Tick what this server should run. Reported as "it was all or nothing": this
  used to be a single-choice list, so the only way to get two apps was to take
  every app. It is a checklist now, like the tools question above it.
  .
- Each line is a separate tick, the same four as `sudo install-sysible` offers
- after the install -- those two menus disagreed, and this was the one that was
- wrong.
+ "slop" is the whole platform behind one front door at https://slop.lan/ with a
+ single sign-in. The other three are the same apps STANDALONE -- each on its own
+ address, with no gateway and no shared login.
  .
- "slop" puts the Controller, SLEP and Connect behind one front door at
- https://slop.lan/ with a single sign-in. It is the recommended choice and it
- already covers all three, so ticking it alongside the others adds nothing --
- if it is ticked, it is what gets installed.
+ The two cannot be mixed on one machine, which is why ticking slop is what
+ counts: the gateway runs those same containers under those same names, so a
+ standalone copy beside it would collide on both the container name and the
+ port. Tick slop for the platform, or tick the standalone apps you want.
  .
  Tick nothing to set nothing up. Any of this can be changed afterwards with:
- sudo install-sysible
+ sudo install-sysible -- the same four choices, as a checklist there too.
  .
  Whatever you pick is installed on the first boot with a working network: the
  source is cloned from GitHub and the containers are built from Docker Hub, so
