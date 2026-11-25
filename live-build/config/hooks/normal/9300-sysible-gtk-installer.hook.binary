@@ -1,0 +1,87 @@
+#!/bin/sh
+# Fetch the GRAPHICAL debian-installer that live-build will not fetch.
+#
+# live-build downloads it for amd64 and i386 only. From lb_binary_debian-installer:
+#
+#     DOWNLOAD_GTK_INSTALLER=0
+#     if [ "${LB_DEBIAN_INSTALLER_GUI}" = "true" ]; then
+#         case "${LB_ARCHITECTURES}" in
+#             amd64|i386) DOWNLOAD_GTK_INSTALLER=1 ;;
+#             powerpc)    [netboot only] ;;
+#         esac
+#     fi
+#
+# arm64 is simply not in that list. Debian DOES publish one -- the same
+# cdrom/gtk/ path as every other architecture -- so the gap is live-build's,
+# not Debian's. Without this, an arm64 install had no graphical installer at
+# all: hook 9400's fallback created install/gtk/initrd.gz by copying the TEXT
+# initrd, the boot menu pointed at it, and the operator got the blue newt
+# dialogs.
+#
+# RUNS BEFORE 9400 (hence 9300). That matters twice: 9400 only creates its
+# fallback copy when install/gtk/initrd.gz is ABSENT, so arriving first means
+# the real one is not overwritten; and 9400 injects the preseed and the Sysible
+# branding into every installer initrd it finds, so the real graphical one gets
+# both.
+#
+# The kernel is deliberately not downloaded. Debian's CD layout ships ONE
+# installer kernel, at install/vmlinuz, and the gtk initrd is built against it
+# -- which is exactly how amd64 works. 9400 creates install/gtk/vmlinuz as a
+# copy of it for menus that reference that path.
+set -e
+
+ARCH="${SYSIBLE_ARCH:-$(dpkg --print-architecture 2>/dev/null || echo amd64)}"
+SUITE="${SYSIBLE_CODENAME:-bookworm}"
+MIRROR="${SYSIBLE_DI_MIRROR:-https://deb.debian.org/debian}"
+
+# amd64/i386 already have one from live-build; nothing to do.
+case "$ARCH" in
+    arm64) ;;
+    *) echo "sysible-gtk-installer: $ARCH gets its graphical installer from live-build; nothing to do."; exit 0 ;;
+esac
+
+URL="$MIRROR/dists/$SUITE/main/installer-$ARCH/current/images/cdrom/gtk/initrd.gz"
+
+# Find the installer tree the same way 9400 does, by path rather than content.
+TREE=""
+for d in $(find . -maxdepth 3 -type d -name 'install*' 2>/dev/null); do
+    [ -f "$d/vmlinuz" ] || continue
+    TREE="$d"; break
+done
+if [ -z "$TREE" ]; then
+    echo "sysible-gtk-installer: ERROR no installer tree (install*/vmlinuz) in the binary stage." >&2
+    exit 1
+fi
+
+mkdir -p "$TREE/gtk"
+DEST="$TREE/gtk/initrd.gz"
+
+echo "sysible-gtk-installer: fetching the $ARCH graphical installer"
+echo "sysible-gtk-installer:   $URL"
+if ! wget -q -O "$DEST.new" "$URL"; then
+    echo "sysible-gtk-installer: ERROR could not download the $ARCH graphical installer." >&2
+    echo "sysible-gtk-installer: Refusing to continue. Falling back silently to the TEXT" >&2
+    echo "sysible-gtk-installer: installer is what shipped the blue newt menus three times;" >&2
+    echo "sysible-gtk-installer: a build that cannot get the graphical one must stop, not" >&2
+    echo "sysible-gtk-installer: quietly publish the wrong installer." >&2
+    rm -f "$DEST.new"
+    exit 1
+fi
+
+# It must be a real graphical initrd, not an error page or the text one. Same
+# probe the boot-menu generation and the payload gate use: only the graphical
+# installer carries gtkrc and usr/share/graphics.
+if ! gzip -t "$DEST.new" 2>/dev/null; then
+    echo "sysible-gtk-installer: ERROR what came back is not gzip. Mirror served something else." >&2
+    rm -f "$DEST.new"; exit 1
+fi
+_listing=$(gzip -dc "$DEST.new" 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
+if ! printf '%s\n' "$_listing" | grep -qE '(^|/)gtkrc$|usr/share/graphics/'; then
+    echo "sysible-gtk-installer: ERROR the downloaded initrd carries no gtkrc and no" >&2
+    echo "sysible-gtk-installer: usr/share/graphics, so it is not the graphical installer." >&2
+    rm -f "$DEST.new"; exit 1
+fi
+
+mv -f "$DEST.new" "$DEST"
+echo "sysible-gtk-installer: installed $DEST ($(wc -c < "$DEST") bytes, verified graphical)"
+exit 0

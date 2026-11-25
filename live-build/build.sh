@@ -604,6 +604,33 @@ if [ -n "$ISO" ]; then
         echo "  [FAIL] UEFI grub.cfg has NO active install entry — a UEFI boot (VMware default) cannot reach the installer" >&2
         gate_fail=1
     fi
+    # AND EVERY INSTALL ENTRY ON THE FINISHED ISO MUST BE GRAPHICAL.
+    #
+    # The entry above only proves an install entry EXISTS. "Install Sysible
+    # Server" was reported landing in the blue newt installer three separate
+    # times, and each fix changed one menu while nothing checked the artifact.
+    # This reads the menus out of the built ISO -- both of them -- and refuses
+    # to publish if an entry a person would plainly pick boots a text-mode
+    # initrd without saying so in its name. Entries that announce themselves
+    # (text mode, expert, rescue, automated, speech) are left alone.
+    ICHK=$(mktemp)
+    $SUDO xorriso -osirrox on -indev "$ISO" -extract /isolinux/install.cfg "$ICHK" 2>/dev/null || true
+    _menus=""
+    [ -s "$GCHK" ] && _menus="$_menus $GCHK"
+    [ -s "$ICHK" ] && _menus="$_menus $ICHK"
+    if [ -n "$_menus" ]; then
+        echo "-- install entries on the finished ISO --"
+        if python3 "$PWD/check-install-entries.py" --arch "${SYSIBLE_ARCH:-amd64}" $_menus; then
+            echo "  [ok]   every plain install entry boots the graphical installer"
+        else
+            echo "  [FAIL] an install entry boots the TEXT installer under a plain name" >&2
+            gate_fail=1
+        fi
+    else
+        echo "  [FAIL] could not read any boot menu off the finished ISO" >&2
+        gate_fail=1
+    fi
+    rm -f "$ICHK"
     rm -f "$GCHK"
 fi
 # THE GRAPHICAL INSTALLER IS REAL, on the arch that is supposed to have one.
@@ -613,11 +640,13 @@ fi
 # gate passed on an ISO whose "Install Sysible Server" entry booted the newt
 # TUI, which is exactly what shipped. Existence was never the question.
 #
-# live-build downloads the graphical installer only for amd64/i386, and only
-# when --debian-installer-gui true is set (auto/config now sets it; see the
-# comment there). On arm64 there is none to download, the fallback copy is
-# correct, and the menu offers a single text entry -- so this is amd64-only.
-if [ "${SYSIBLE_ARCH:-amd64}" = "amd64" ]; then
+# BOTH ARCHES. live-build downloads the graphical installer for amd64/i386
+# only, but Debian publishes one for arm64 as well and
+# 9300-sysible-gtk-installer fetches it. Verified against the real archive:
+# arm64's cdrom/gtk/initrd.gz is 50,748,002 bytes and carries etc/gtk-2.0/gtkrc
+# and usr/share/graphics/, while its text initrd is 22,103,479 bytes and
+# carries neither. So no architecture is exempt from this.
+if true; then
     if [ -f binary/install/gtk/initrd.gz ]; then
         _gl=$(gzip -dc binary/install/gtk/initrd.gz 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
         if printf '%s\n' "$_gl" | grep -qE '(^|/)gtkrc$|usr/share/graphics/'; then
