@@ -358,8 +358,24 @@ if [ -n "$ISO" ]; then
         # only COMMENTED "Alternate … installer" examples, so a UEFI boot (VMware
         # Fusion's default) reaches NO installer at all. That was the real "black
         # screen with a mouse pointer" — no installer entry, not a graphics bug.
-        GTK_INITRD=0; [ -f binary/install/gtk/initrd.gz ] && GTK_INITRD=1
-        echo "GRUB-DEBUG: gtk installer initrd present = $GTK_INITRD"
+        # REAL, not merely present. 9400-sysible-installer-branding creates
+        # install/gtk/initrd.gz by COPYING THE TEXT INITRD when live-build did
+        # not produce a graphical one -- its own log says "(falls back to the
+        # text installer)". So `[ -f ... ]` was true on every build, this was
+        # always 1, and the menu always offered a "graphical" entry that booted
+        # newt. That is the blue TUI, reported three times.
+        #
+        # The discriminator is content: only the graphical initrd carries
+        # usr/share/graphics (the banner) and a gtkrc. The same probe the
+        # branding hook already uses to decide whether to brand.
+        GTK_INITRD=0
+        if [ -f binary/install/gtk/initrd.gz ]; then
+            _gl=$(gzip -dc binary/install/gtk/initrd.gz 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
+            if printf '%s\n' "$_gl" | grep -qE '(^|/)gtkrc$|usr/share/graphics/'; then
+                GTK_INITRD=1
+            fi
+        fi
+        echo "GRUB-DEBUG: REAL gtk installer initrd = $GTK_INITRD"
         python3 - "$WORK/grub.cfg" "$GTK_INITRD" <<'PY'
 import sys, re
 p = sys.argv[1]; s = open(p).read()
@@ -584,6 +600,32 @@ if [ -n "$ISO" ]; then
         gate_fail=1
     fi
     rm -f "$GCHK"
+fi
+# THE GRAPHICAL INSTALLER IS REAL, on the arch that is supposed to have one.
+#
+# The loop above only checked that install/gtk/initrd.gz EXISTS -- and the
+# branding hook guarantees it exists by copying the text initrd there. So the
+# gate passed on an ISO whose "Install Sysible Server" entry booted the newt
+# TUI, which is exactly what shipped. Existence was never the question.
+#
+# live-build downloads the graphical installer only for amd64/i386, and only
+# when --debian-installer-gui true is set (auto/config now sets it; see the
+# comment there). On arm64 there is none to download, the fallback copy is
+# correct, and the menu offers a single text entry -- so this is amd64-only.
+if [ "${SYSIBLE_ARCH:-amd64}" = "amd64" ]; then
+    if [ -f binary/install/gtk/initrd.gz ]; then
+        _gl=$(gzip -dc binary/install/gtk/initrd.gz 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
+        if printf '%s\n' "$_gl" | grep -qE '(^|/)gtkrc$|usr/share/graphics/'; then
+            echo "  [ok]   install/gtk/initrd.gz is a REAL graphical installer"
+        else
+            echo "  [FAIL] install/gtk/initrd.gz carries NO gtkrc and no usr/share/graphics —" >&2
+            echo "         it is the TEXT initrd copied into the gtk path by the branding" >&2
+            echo "         hook's fallback. Booting \"Install Sysible Server\" would land in" >&2
+            echo "         the newt TUI. Check that auto/config still passes" >&2
+            echo "         --debian-installer-gui true and that the di download succeeded." >&2
+            gate_fail=1
+        fi
+    fi
 fi
 if [ "$gate_fail" != 0 ]; then
     echo "FATAL: installer payload incomplete — refusing to publish this ISO." >&2
