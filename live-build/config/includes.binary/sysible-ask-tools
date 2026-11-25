@@ -59,10 +59,37 @@ printf '%s' "${RET:-}" | tr -d ' ' | tr ',' ' ' > /tmp/sysible-tools.wanted 2>/d
 db_input critical sysible/apps 2>/dev/null || true
 db_go 2>/dev/null || true
 
-APPS=
-db_get sysible/apps 2>/dev/null || APPS=
+# db_get sets $RET -- NOT a variable named after the question. The tools branch
+# above reads $RET correctly; this one set APPS= and then read $APPS, which is
+# empty forever. So the answer was collected and thrown away: the file was
+# always written empty and the first boot reported "nothing selected", whatever
+# had been chosen. That is why making this a checklist had to come with running
+# the script instead of reading it.
+RET=
+db_get sysible/apps 2>/dev/null || RET=
+APPS="${RET:-}"
+# A multiselect answers "a, b, c". Each choice's FIRST WORD is the id
+# install-sysible takes, so a choice can carry explanatory text -- "slop (all
+# apps behind one gateway)" -- without the parsing changing. sed, not awk: this
+# runs in the installer's busybox environment.
+#
+# The old line was `tr -d ' '` with no `tr ',' ' '` (which the tools question
+# above DOES have), so the moment this became a multiselect it would have
+# written "controller,slep" and install-sysible would have rejected it as one
+# unknown product. The question was single-choice, so it never showed.
+APPS=$(printf '%s' "${APPS:-}" \
+       | tr ',' '\n' \
+       | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]].*$//' -e '/^$/d' \
+       | tr '\n' ' ')
+# "slop" IS all three behind the gateway, so it supersedes the rest: installing
+# it alongside controller/slep/connect would stand a second standalone copy of
+# each next to the ones the gateway fronts.
+case " $APPS " in
+  *" slop "*) APPS="slop" ;;
+esac
+APPS=$(printf '%s' "$APPS" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 case "${APPS:-}" in
   ''|none) : > /tmp/sysible-apps.wanted 2>/dev/null || true ;;
-  *)       printf '%s' "$APPS" | tr -d ' ' > /tmp/sysible-apps.wanted 2>/dev/null || true ;;
+  *)       printf '%s' "$APPS" > /tmp/sysible-apps.wanted 2>/dev/null || true ;;
 esac
 exit 0

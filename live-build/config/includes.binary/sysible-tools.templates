@@ -16,24 +16,27 @@ Description: Optional software to install
  You can add or remove these tools at any time later with:  sudo sysible-tools
 
 Template: sysible/apps
-Type: select
-Choices: slop, all, controller, slep, connect, none
-Default: slop
-Description: Sysible platform to set up on first boot
- This image ships the Sysible apps' source and installs them as containers.
- Until now that only happened if you knew to run `install-sysible` after the
- install had finished, which is not discoverable on a headless server.
+Type: multiselect
+Choices: slop (one gateway in front of all three), controller (fleet console), slep (infra automation), connect (browser terminal)
+Default: slop (one gateway in front of all three)
+Description: Sysible software to set up on first boot
+ Tick what this server should run. Reported as "it was all or nothing": this
+ used to be a single-choice list, so the only way to get two apps was to take
+ every app. It is a checklist now, like the tools question above it.
  .
- slop        all three apps behind one front door at https://slop.lan/ and a
-             single sign-in (recommended)
- all         all three apps, each on its own address, no gateway
- controller / slep / connect
-             just that one
- none        set nothing up; run `sudo install-sysible` yourself later
+ Each line is a separate tick, the same four as `sudo install-sysible` offers
+ after the install -- those two menus disagreed, and this was the one that was
+ wrong.
  .
- Whatever you pick is installed the first time this system boots with a working
- network connection: the source is cloned from GitHub and the containers are
- built from Docker Hub, so it needs both and it is not quick. Nothing listens
- on the network until it completes.
+ "slop" puts the Controller, SLEP and Connect behind one front door at
+ https://slop.lan/ with a single sign-in. It is the recommended choice and it
+ already covers all three, so ticking it alongside the others adds nothing --
+ if it is ticked, it is what gets installed.
  .
- You can change any of this afterwards with:  sudo install-sysible
+ Tick nothing to set nothing up. Any of this can be changed afterwards with:
+ sudo install-sysible
+ .
+ Whatever you pick is installed on the first boot with a working network: the
+ source is cloned from GitHub and the containers are built from Docker Hub, so
+ it needs both and it is not quick. Nothing listens on the network until it
+ completes.

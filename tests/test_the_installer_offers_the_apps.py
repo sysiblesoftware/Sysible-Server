@@ -41,7 +41,16 @@ def test_the_installer_asks_which_apps_to_set_up():
     block = t[t.index("Template: sysible/apps"):]
     assert "Default: slop" in block, \
         "the thing that was asked for is not the default answer"
-    assert "none" in block, "there is no way to decline"
+    # DECLINING. There used to be a literal "none" choice, because this was a
+    # single-choice list and declining needed somewhere to click. It is a
+    # checklist now -- reported as "it was all or nothing" -- so declining is
+    # ticking nothing, and a "none" box sitting among real ones would be a
+    # second way to say the same thing. The way to decline must still EXIST,
+    # which for a multiselect means the empty answer is handled.
+    assert "Type: multiselect" in block or "none" in block, \
+        "there is no way to decline"
+    ask = ASK.read_text(encoding="utf-8")
+    assert "''|none)" in ask, "an empty selection is not handled as 'install nothing'"
 
 
 def test_the_question_is_put_during_the_install():
@@ -123,7 +132,8 @@ pytestmark = pytest.mark.skipif(not SH, reason="no sh on this machine")
 def test_it_installs_what_was_chosen(firstboot):
     firstboot.want.write_text("slop\n")
     firstboot.run(ok=True)
-    assert firstboot.calls() == ["install-sysible slop"]
+    # -y: a first boot has no terminal and nobody watching it.
+    assert firstboot.calls() == ["install-sysible -y slop"]
     assert not firstboot.want.exists(), "a successful run must not repeat next boot"
 
 
