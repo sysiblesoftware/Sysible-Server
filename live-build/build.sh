@@ -238,6 +238,16 @@ export SYSIBLE_INSTALLER_BANNER="$ROOT/branding/installer/logo_installer.png"
 # Absolute path to the preseed, injected INTO the installer initrd by hook 9400 so
 # d-i auto-loads it without depending on the file=/cdrom/preseed.cfg boot argument.
 export SYSIBLE_PRESEED="$PWD/config/includes.binary/preseed.cfg"
+# The app/tool question's script and its debconf templates go into the initrd
+# TOO, beside the preseed. They used to ship only on the ISO root, which the
+# preseed reaches as /cdrom/... -- but the preseed itself is read from the
+# INITRD, before cdrom-detect has mounted any media, so `sh /cdrom/...` had
+# nothing to open and `|| true` swallowed it. The question was never asked and
+# nothing said so. Reported as "I still didn't see a menu to install SLOP or
+# slep". They stay on the ISO root as well, as the fallback for an hd-media
+# install.
+export SYSIBLE_ASK_TOOLS="$PWD/config/includes.binary/sysible-ask-tools"
+export SYSIBLE_ASK_TEMPLATES="$PWD/config/includes.binary/sysible-tools.templates"
 # Stage the build, so the chroot can be given a CA store in between debootstrap
 # and the first apt update. `lb build` is precisely `lb bootstrap; lb chroot; lb
 # binary; lb source`, and each stage guards itself with a stamp under .build/ --
@@ -497,12 +507,25 @@ for i in binary/install/initrd.gz binary/install/gtk/initrd.gz; do
     # though the hook packs it via `find .` — so the optional prefix MUST be a
     # grouped, optional `(\./)?`. The earlier `\./?` required a literal dot and
     # never matched bare `preseed.cfg`, failing this gate on a CORRECT payload.
-    if gzip -dc "$i" 2>/dev/null | cpio -t --quiet 2>/dev/null | grep -qE '^(\./)?preseed\.cfg$'; then
+    _listing=$(gzip -dc "$i" 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
+    if printf '%s\n' "$_listing" | grep -qE '^(\./)?preseed\.cfg$'; then
         echo "  [ok]   preseed.cfg inside $i"
     else
         echo "  [FAIL] $i has NO preseed.cfg — the installed system would have no bootloader" >&2
         gate_fail=1
     fi
+    # The preseed's early_command runs BEFORE any media is mounted, so these two
+    # must be in the initrd with it. On the ISO root alone the question is
+    # silently never asked -- `|| true` on the early_command hides it, by design,
+    # so nothing in the log would say the apps prompt had gone missing.
+    for _need in sysible-ask-tools sysible-tools.templates; do
+        if printf '%s\n' "$_listing" | grep -qE "^(\./)?${_need}$"; then
+            echo "  [ok]   $_need inside $i"
+        else
+            echo "  [FAIL] $i has NO $_need — the install would never ask which apps to set up" >&2
+            gate_fail=1
+        fi
+    done
 done
 # The UEFI GRUB menu MUST offer an active installer entry. live-build ships none
 # there (only commented "Alternate …" examples), so a UEFI boot — VMware Fusion's

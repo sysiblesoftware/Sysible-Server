@@ -25,9 +25,13 @@ if [ ! -r /usr/share/debconf/confmodule ]; then
 fi
 . /usr/share/debconf/confmodule 2>/dev/null || exit 0
 
-# The template ships on the ISO root next to preseed.cfg (config/includes.binary/).
-# /cdrom is the normal mount; /hd-media covers USB-image installs.
-for T in /cdrom/sysible-tools.templates /hd-media/sysible-tools.templates; do
+# WHERE THE TEMPLATES ARE. The initrd root first, for the same reason the
+# preseed runs us from there: at early_command time no media is mounted yet, so
+# /cdrom/... is not available and debconf-loadtemplate would quietly load
+# nothing -- leaving db_input with no template to show, which looks exactly like
+# "the question was never asked". /cdrom and /hd-media remain for an hd-media
+# install, where the ISO root copy is what exists.
+for T in /sysible-tools.templates /cdrom/sysible-tools.templates /hd-media/sysible-tools.templates; do
   if [ -f "$T" ]; then
     debconf-loadtemplate sysible "$T" 2>/dev/null || true
     break
