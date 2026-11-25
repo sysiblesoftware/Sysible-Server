@@ -498,11 +498,16 @@ PY
         # are different files; rebranding the first does nothing to the second.
         MAP_INSTALL=""
         if [ -s "$WORK/install.cfg" ]; then
-            echo "-- isolinux install.cfg BEFORE --"; grep -iE 'label|linux|initrd|default' "$WORK/install.cfg" | head
+            # THE WHOLE FILE, not a grep piped through head. The relabel below
+            # silently matched nothing on every build because the real file
+            # uses "Start ^installer" rather than "Graphical install", and the
+            # only reason that was ever caught is that this dump happened to
+            # include the labels. `head` had been cutting it off at ten lines.
+            echo "-- isolinux install.cfg BEFORE --"; cat "$WORK/install.cfg"
             if python3 "$PWD/rewrite-installcfg.py" < "$WORK/install.cfg" > "$WORK/install.new"; then
                 mv "$WORK/install.new" "$WORK/install.cfg"
                 MAP_INSTALL="-map $WORK/install.cfg /isolinux/install.cfg"
-                echo "-- isolinux install.cfg AFTER --"; grep -iE 'label|linux|initrd|default' "$WORK/install.cfg" | head
+                echo "-- isolinux install.cfg AFTER --"; cat "$WORK/install.cfg"
             else
                 echo "WARNING: could not rewrite isolinux install.cfg; BIOS install menu left stock" >&2
             fi
