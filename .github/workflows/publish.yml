@@ -144,7 +144,13 @@ jobs:
               scripts/aptly.conf.sample > "$HOME/.aptly.conf"
 
       - name: Restore aptly database
-        run: aws s3 sync --endpoint-url "$R2_ENDPOINT" "$STATE_URI" "$HOME/.aptly" || echo "no prior aptly state (first run)"
+        # One object, not a directory sync. `aws s3 sync` had no --delete in
+        # either direction, so the bucket accumulated every LevelDB generation
+        # ever written and a restore could assemble a database referencing data
+        # it did not fetch. That is what produced
+        #   "unable to load package with key ...: key not found"
+        # and blocked publishing for every product sharing this archive.
+        run: APTLY_ROOT="$HOME/.aptly" ./scripts/aptly-state.sh restore
 
       - name: Build all packages
         # Stamp a unique, monotonic version suffix onto every package so each
@@ -315,4 +321,7 @@ jobs:
           echo "Cache purged for ${host}."
 
       - name: Persist aptly database
-        run: aws s3 sync --endpoint-url "$R2_ENDPOINT" "$HOME/.aptly" "$STATE_URI"
+        # Atomic: an S3 PUT is all-or-nothing, so a concurrent reader sees the
+        # whole previous database or the whole new one, never a mixture. Keeps
+        # the previous generation under a dated key first.
+        run: APTLY_ROOT="$HOME/.aptly" ./scripts/aptly-state.sh persist
