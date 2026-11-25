@@ -31,6 +31,8 @@ import pathlib
 import shutil
 import subprocess
 
+import re
+
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -80,10 +82,49 @@ def test_all_and_none_are_gone():
     assert {"slop", "controller", "slep", "connect"} == set(ids), ids
 
 
-def test_no_choice_hides_a_comma():
-    """Commas separate choices. One inside a label silently splits it in two."""
-    for c in _field("sysible/apps", "Choices").split(","):
-        assert "(" not in c or ")" in c, f"a comma split this label: {c!r}"
+@pytest.mark.parametrize("question", ["sysible/apps", "sysible/tools"])
+def test_no_choice_hides_a_comma(question):
+    """Commas separate choices. One inside a label silently splits it in two.
+
+    THIS GUARD EXISTED AND CHECKED ONLY sysible/apps. On 25 Nov the licence
+    note was added to sysible/tools as "terraform (BUSL, not open source)" --
+    and debconf read that comma as a separator. The seven tools became THIRTEEN
+    choices, every other one a sentence fragment with its own checkbox:
+
+        [ ] terraform (BUSL
+        [ ] not open source)
+        [ ] vault (BUSL
+        [ ] not open source)
+
+    It shipped in ISO #93 and was reported from a real install. The guard was
+    right; it was pointed at one of the two questions.
+    """
+    choices = _field(question, "Choices")
+    for c in choices.split(","):
+        assert "(" not in c or ")" in c, (
+            f"{question}: a comma split this label: {c!r} -- debconf separates "
+            f"choices on the comma, so this renders as two checkboxes")
+
+
+@pytest.mark.parametrize("question,expected", [("sysible/apps", 4), ("sysible/tools", 7)])
+def test_the_question_offers_exactly_the_choices_it_means_to(question, expected):
+    """Counting is the blunt version of the guard above and catches the same
+    thing from the other side: thirteen checkboxes where seven were intended."""
+    choices = [c.strip() for c in _field(question, "Choices").split(",") if c.strip()]
+    assert len(choices) == expected, (
+        f"{question} declares {len(choices)} choices, not {expected}:\n  "
+        + "\n  ".join(choices))
+
+
+@pytest.mark.parametrize("question", ["sysible/apps", "sysible/tools"])
+def test_every_choice_starts_with_a_bare_id(question):
+    """The first word of a choice is the id the installer records. A choice
+    whose first word is punctuation or a fragment cannot be acted on."""
+    for c in (x.strip() for x in _field(question, "Choices").split(",") if x.strip()):
+        first = c.split()[0]
+        assert re.fullmatch(r"[a-z][a-z0-9-]*", first), (
+            f"{question}: choice {c!r} does not begin with a usable id "
+            f"(got {first!r})")
 
 
 def test_the_default_is_one_of_the_choices():

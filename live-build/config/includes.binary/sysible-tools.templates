@@ -1,6 +1,6 @@
 Template: sysible/tools
 Type: multiselect
-Choices: terraform (BUSL, not open source), vault (BUSL, not open source), consul (BUSL, not open source), nomad (BUSL, not open source), packer (BUSL, not open source), boundary (BUSL, not open source), aws-cli (Amazon's own channel)
+Choices: terraform (BUSL - not open source), vault (BUSL - not open source), consul (BUSL - not open source), nomad (BUSL - not open source), packer (BUSL - not open source), boundary (BUSL - not open source), aws-cli (Amazon's own channel)
 Default:
 Description: Extra software to install on first boot
  Tick nothing to install nothing. None of this is bundled in the image, which
