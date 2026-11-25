@@ -266,9 +266,24 @@ jobs:
 
             A live Debian-stable image with the whole server toolchain baked in:
             containers, Kubernetes, infrastructure-as-code, cloud CLIs, headless
-            libvirt/QEMU and the modern CLI set — installed via the text-mode Debian
-            Installer. No GNOME desktop, no GUI apps. the full engineering
-            toolset, headless. Includes the Sysible Controller CE installer.
+            libvirt/QEMU and the modern CLI set — installed with the graphical Debian
+            Installer, with a text-mode entry in the boot menu as the fallback. No
+            GNOME desktop, no GUI apps — the full engineering toolset, headless.
+            Includes the Sysible Controller CE installer.
+
+            ### New in 1.0.5
+            * **Sysible Server has its own mark.** It and Sysible Workstation had
+              been using one identical logo, distinguishable only by the wordmark
+              printed next to it. Server now carries stacked rack units; Workstation
+              carries a terminal window.
+            * **`apt upgrade` works from this repository again.** Packages published
+              from Server were not carrying a unique version, so a rebuild rewrote a
+              pool path the CDN had been told to cache permanently, and apt refused
+              the mismatch with `File has unexpected size`. Versions now carry a
+              timestamp, the run id and the commit.
+            * **Releases reach the apt repo at all.** Every publish had been failing
+              on a step that could not replace an already-published repository, so
+              nothing from a release ever arrived in `sysible-stable`.
 
             ### Downloads (amd64 & arm64)
             The ISO is ~3.4 GB, over GitHub's 2 GB per-file limit, so each build ships
