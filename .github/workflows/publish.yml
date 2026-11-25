@@ -14,14 +14,13 @@ on:
   # Called by iso.yml at the end of a release build. THE TAG TRIGGER ABOVE
   # CANNOT FIRE ON ITS OWN: the release is cut by softprops/action-gh-release
   # using GITHUB_TOKEN, and GitHub deliberately does not start workflow runs
-  # from refs pushed with that token. So `tags: ['v*']` has never once run here
-  # either -- sysible-stable kept whatever it had while v1.0.0 through v1.0.3
-  # came and went, and every installed Server on the stable channel stayed
-  # frozen with it. Sysible Workstation hit this first and records the same
-  # note; Server was left with the trigger that cannot fire.
+  # from refs pushed with that token. So `tags: ['v*']` has never once run —
+  # sysible-stable sat on its 28 August contents while v1.0.2 and v1.0.3 both
+  # came and went, and every installed machine on the stable channel was
+  # quietly frozen with it.
   #
-  # A reusable workflow is not an event, so nothing suppresses it: iso.yml calls
-  # this in the SAME run that published the release.
+  # A reusable workflow is not an event, so nothing suppresses it: iso.yml
+  # calls this in the SAME run that published the release.
   workflow_call:
     inputs:
       suite:
@@ -32,8 +31,8 @@ on:
 # Only ONE publish at a time. Every run restores the same aptly database from
 # R2, adds to it, and syncs it back, so two concurrent publishes interleave on
 # shared state: the second to finish persists a database that never saw the
-# first's packages. A push to main (dev) and the release's own stable publish of
-# the same commit overlap exactly this way.
+# first's packages. A push to main (dev) and a workflow_dispatch (stable) of the
+# same commit overlap exactly this way — that is how run 83 and run 84 collided.
 # cancel-in-progress is false: a publish that is partway through uploading must
 # finish, not be killed with the bucket half-updated.
 concurrency:
@@ -49,7 +48,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     # Never run on forks; only publish from the canonical repo.
-    if: github.repository == 'sysiblesoftware/sysible-server'
+    if: github.repository == 'sysiblesoftware/Sysible-Server'
     env:
       # aptly publishes to a local dir; a later step `aws s3 sync`s it to R2.
       # (aptly's native S3 publish emits an x-amz-acl header R2 rejects with 501.)
@@ -118,9 +117,19 @@ jobs:
           # into the shell text) so its bytes never land in the command line/logs.
           printf '%s' "$SYSIBLE_GPG_PRIVATE_KEY" | gpg --batch --import
           # The secret must contain the exact key we sign with, and whose public
-          # half is the committed keyring — otherwise clients can't verify.
+          # half is the committed keyring (packages/sysible-release/keyrings/
+          # sysible-archive-keyring.gpg = "$SYSIBLE_GPG_KEY") — otherwise clients
+          # can't verify the repo and `apt update` fails on every host.
           if ! gpg --list-secret-keys "$SYSIBLE_GPG_KEY" >/dev/null 2>&1; then
-            echo "::error::SYSIBLE_GPG_PRIVATE_KEY does not contain $SYSIBLE_GPG_KEY. Update the secret with: gpg --armor --export-secret-keys maintainers@sysible.com"
+            echo "::error::SYSIBLE_GPG_PRIVATE_KEY does not contain the signing key '$SYSIBLE_GPG_KEY' that clients trust."
+            # Show WHICH identities the secret DID hold (UIDs/emails are public, not
+            # secret) so the mismatch is obvious at a glance — a rotated-in wrong key
+            # is the usual cause.
+            echo "The secret actually contains these secret key(s):"
+            gpg --list-secret-keys --keyid-format=long | grep -E '^(sec|uid)' || true
+            echo "Fix: export the private half of the client-trusted key and update the secret:"
+            echo "  gpg --armor --export-secret-keys $SYSIBLE_GPG_KEY   # paste into SYSIBLE_GPG_PRIVATE_KEY"
+            echo "(Do NOT switch signing to the other key — clients trust only '$SYSIBLE_GPG_KEY' until a new sysible-release keyring reaches them.)"
             exit 1
           fi
 
@@ -138,12 +147,52 @@ jobs:
         run: aws s3 sync --endpoint-url "$R2_ENDPOINT" "$STATE_URI" "$HOME/.aptly" || echo "no prior aptly state (first run)"
 
       - name: Build all packages
-        run: ./scripts/build-all.sh
+        # Stamp a unique, monotonic version suffix onto every package so each
+        # publish lands at a fresh, never-cached pool path. This is the root-cause
+        # fix for the "File has unexpected size" apt failure: a same-version
+        # rebuild can no longer collide with an immutably-cached .deb at the edge,
+        # and it self-heals a stale repo on the next publish without a CDN purge.
+        #
+        # This used to be the run number alone, and that is NOT unique, which
+        # produced the exact failure the scheme exists to prevent. run_number is
+        # scoped to ONE workflow, and two of them reach this job:
+        #
+        #   publish.yml  on push / dispatch        -> its own counter (78 and up)
+        #   publish.yml  called by iso.yml         -> the CALLER's counter (49, 50)
+        #
+        # So iso.yml run 49 stamped +ci49 onto the v1.0.5 stable publish, months
+        # after publish.yml run 49 had stamped +ci49 onto a different source tree
+        # for dev. Same pool paths, different bytes, and pool/ is uploaded with
+        # `immutable, max-age=1y` — the edge had been told those URLs can never
+        # change, so it kept serving the older build against the newer index and
+        # every apt upgrade died on "File has unexpected size".
+        #
+        # The suffix is now wall-clock UTC plus the commit it was built from:
+        # monotonic because time is, unique because no two runs share a second,
+        # and traceable because `apt policy` then names the commit. It sorts
+        # above every +ci<run_number> already in the wild (dpkg compares the
+        # digit runs numerically, and 20261106... > any run number).
+        run: |
+          set -euo pipefail
+          # run_id is what makes this UNIQUE; the timestamp is what makes it
+          # monotonic and readable, and the sha is what makes it traceable.
+          # The timestamp alone was not enough: a push and a workflow_dispatch of
+          # the SAME commit, triggered 4s apart, reached this step in the same
+          # second and produced the same suffix. The immutability guard caught it
+          # (run 84), which is what it is for, but the publish failed.
+          SYSIBLE_VERSION_SUFFIX="+ci$(date -u +%Y%m%d%H%M%S).r${GITHUB_RUN_ID}.g$(git rev-parse --short=7 HEAD)"
+          export SYSIBLE_VERSION_SUFFIX
+          echo "SYSIBLE_VERSION_SUFFIX=$SYSIBLE_VERSION_SUFFIX" >> "$GITHUB_ENV"
+          echo "Stamping packages with $SYSIBLE_VERSION_SUFFIX"
+          ./scripts/build-all.sh
 
       - name: Select suite
         id: suite
         env:
-          DISPATCH_SUITE: ${{ github.event.inputs.suite }}
+          # `inputs` resolves for BOTH workflow_dispatch and workflow_call;
+          # github.event.inputs is null for a call and the suite silently fell
+          # through to dev.
+          DISPATCH_SUITE: ${{ inputs.suite }}
         run: |
           # A manual re-publish (workflow_dispatch) picks its suite explicitly;
           # otherwise a tag -> stable, a branch push -> dev.
@@ -167,30 +216,103 @@ jobs:
           # VMs may be reading. Each suite overwrites its own dists/ in place;
           # orphaned pool files are harmless.
           #
-          # Cache-Control is the crux of correctness behind Cloudflare's CDN. NEITHER
-          # tree may be served stale, because apt validates every file by size+hash
-          # against the index:
-          #   * pool/  — aptly names pool files by VERSION, not by content hash
-          #     (…/sysible-branding_0.1.1_all.deb). A rebuild of the SAME version
-          #     (non-reproducible .debs, or a dev republish sharing the pool with a
-          #     stable snapshot) overwrites that path with different bytes. Caching it
-          #     "immutable" then pins the OLD copy at the edge while a fresh index
-          #     expects the new one -> apt fails "File has unexpected size". So the
-          #     pool must revalidate too. (A short max-age still lets the edge store
-          #     it and answer with a cheap 304 when unchanged.)
-          #   * dists/ — the Release / Packages index apt fetches first; never cache.
+          # Cache-Control is the crux of correctness behind Cloudflare's CDN:
+          #   * pool/  — content-addressed .deb payloads that never change once
+          #     published, so cache them hard (a year, immutable).
+          #   * dists/ — the Release / Packages / *.bz2 index that apt fetches
+          #     first and validates by size+hash. If the CDN serves a STALE
+          #     index against a FRESH Release, apt fails ("unexpected size").
+          #     It must never be cached: send no-cache and re-upload every run
+          #     so the edge always revalidates against the origin.
           #
-          # Pass 1: pool/ (the .deb payloads) — revalidate so a rebuilt .deb is never
-          # served stale.
+          # IMMUTABILITY GUARD. pool/ is uploaded `immutable, max-age=1y`, which
+          # is a promise that a given URL's bytes never change. Breaking that
+          # promise does not fail loudly — it poisons the edge for a YEAR while
+          # the index describes bytes nobody can fetch, which is exactly how the
+          # +ci<run_number> collision went unnoticed until an operator's apt
+          # upgrade died on it. So enforce the promise here: every path this run
+          # publishes must be new. If one already exists in the bucket, the
+          # version stamp is not unique and publishing would corrupt the repo.
+          dupes=0
+          while IFS= read -r deb; do
+            key="apt/pool/${deb#"$HOME"/aptly-public/pool/}"
+            if aws s3api head-object --bucket sysible-apt --key "$key" \
+                 --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
+              echo "::error::$key already exists in the bucket. This build would"
+              echo "::error::overwrite an immutably-cached pool path with different"
+              echo "::error::bytes, so apt would fail with 'File has unexpected size'."
+              dupes=$((dupes + 1))
+            fi
+          done < <(find "$HOME/aptly-public/pool" -type f -name "*${SYSIBLE_VERSION_SUFFIX}_*.deb")
+          if [ "$dupes" -ne 0 ]; then
+            echo "::error::$dupes pool path(s) collided — the version suffix is not unique."
+            exit 1
+          fi
+
+          # Pass 1: pool/ (the .deb payloads) — long-lived, immutable.
           if [ -d "$HOME/aptly-public/pool" ]; then
             aws s3 sync "$HOME/aptly-public/pool/" "s3://sysible-apt/apt/pool/" \
               --endpoint-url "$R2_ENDPOINT" --no-progress \
-              --cache-control "public, no-cache, must-revalidate"
+              --cache-control "public, max-age=31536000, immutable"
           fi
           # Pass 2: dists/ (the index metadata) — never cache, always re-upload.
           aws s3 cp "$HOME/aptly-public/dists/" "s3://sysible-apt/apt/dists/" \
             --recursive --endpoint-url "$R2_ENDPOINT" --no-progress \
             --cache-control "no-cache, max-age=0, must-revalidate"
+
+      - name: Purge Cloudflare cache
+        # Why this is required: pool/ .deb payloads are cached `immutable` for a
+        # year, but their paths are NOT content-addressed — so if the SAME package
+        # version is ever rebuilt with different bytes (a non-reproducible build,
+        # e.g. a timestamp change) and re-uploaded to the same path, the edge keeps
+        # serving the OLD cached .deb while the fresh no-cache index describes the
+        # NEW one, and apt fails with "File has unexpected size (... != ...)". A
+        # purge after every publish makes the edge re-fetch the current origin and
+        # eliminates that whole class of stale-artifact mismatch.
+        #
+        # Configure once: repo variable CLOUDFLARE_ZONE_ID + secret
+        # CLOUDFLARE_API_TOKEN (Zone.Cache Purge permission). Optional repo
+        # variable REPO_HOST (default repo.sysible.com) scopes the purge to just
+        # the apt host. No-op (with a warning) until the zone id is set, so this
+        # never blocks a publish.
+        #
+        # This step used to carry `if: vars.CLOUDFLARE_ZONE_ID != ''`, which meant
+        # the "no-op WITH A WARNING" above was a fiction: the whole step was
+        # skipped, so the warning inside it never ran and an unconfigured purge
+        # appeared as a silent grey tick on every green publish. It read as
+        # benign for months. It is not benign — it is the documented safety net
+        # for a poisoned immutable pool path, and nobody could see it was absent.
+        # The gate is gone; the step now runs and says so.
+        env:
+          CF_ZONE: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_HOST: ${{ vars.REPO_HOST }}
+        run: |
+          if [ -z "$CF_ZONE" ]; then
+            echo "::warning::No CLOUDFLARE_ZONE_ID repo variable — the CDN cache was NOT purged."
+            echo "::warning::pool/ is served immutable for a year, so if a pool path is ever"
+            echo "::warning::rebuilt with different bytes the edge keeps the stale copy and apt"
+            echo "::warning::fails with 'File has unexpected size'. The unique version stamp"
+            echo "::warning::makes that unlikely and the immutability guard above makes it loud,"
+            echo "::warning::but this purge is the repair path. Set CLOUDFLARE_ZONE_ID and the"
+            echo "::warning::CLOUDFLARE_API_TOKEN secret (Zone.Cache Purge) to enable it."
+            exit 0
+          fi
+          if [ -z "$CF_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_ZONE_ID is set but the CLOUDFLARE_API_TOKEN secret is missing — skipping CDN purge. A same-version rebuild can then serve a stale .deb until the cache is purged by hand."
+            exit 0
+          fi
+          host="${CF_HOST:-repo.sysible.com}"
+          echo "Purging Cloudflare cache for host ${host} (zone ${CF_ZONE})…"
+          resp="$(curl -sS -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE}/purge_cache" \
+            -H "Authorization: Bearer ${CF_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"hosts\":[\"${host}\"]}")"
+          echo "$resp"
+          echo "$resp" | grep -q '"success":true' \
+            || { echo "::error::Cloudflare purge failed (see response above)."; exit 1; }
+          echo "Cache purged for ${host}."
 
       - name: Persist aptly database
         run: aws s3 sync --endpoint-url "$R2_ENDPOINT" "$HOME/.aptly" "$STATE_URI"
