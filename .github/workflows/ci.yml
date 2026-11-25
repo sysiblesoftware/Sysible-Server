@@ -55,7 +55,13 @@ jobs:
         # FAILURE rather than a silent skip.
         run: |
           python3 -m venv /tmp/pytest-venv
-          /tmp/pytest-venv/bin/pip install --quiet --disable-pip-version-check pytest
+          # PyYAML, not just pytest: several guards parse the workflow files to
+          # assert on their STRUCTURE rather than grepping their text, so a
+          # renamed step or a changed `if:` cannot slip past. Without it those
+          # modules fail at COLLECTION, which aborts the whole run before a
+          # single test executes — four red CI runs on 25 Nov, every one of them
+          # reported as two import errors and nothing else.
+          /tmp/pytest-venv/bin/pip install --quiet --disable-pip-version-check pytest pyyaml
           sudo -E SYSIBLE_REQUIRE_NS=1 /tmp/pytest-venv/bin/python -m pytest
 
   build:

@@ -45,9 +45,19 @@ db_go 2>/dev/null || true
 
 RET=
 db_get sysible/tools 2>/dev/null || RET=
-# db_get yields comma+space separated ids ("vault, consul"); normalise to a plain
-# space-separated list the first-boot installer can pass straight to sysible-tools.
-printf '%s' "${RET:-}" | tr -d ' ' | tr ',' ' ' > /tmp/sysible-tools.wanted 2>/dev/null || true
+# Parsed exactly like sysible/apps below: split on the comma, then take each
+# choice's FIRST WORD as the id. The old line was `tr -d ' '` with no comma
+# split -- it deleted every space and so could only ever work while the choices
+# were bare names. The moment a choice carried explanatory text, as the apps
+# question's already do and these now do, it would have produced
+# "terraform(BUSL,notopensource)" and the first-boot installer would have
+# rejected the lot. Same question, same shape, same parser.
+TOOLS=$(printf '%s' "${RET:-}" \
+        | tr ',' '\n' \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]].*$//' -e '/^$/d' \
+        | tr '\n' ' ')
+TOOLS=$(printf '%s' "$TOOLS" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+printf '%s' "$TOOLS" > /tmp/sysible-tools.wanted 2>/dev/null || true
 
 # --- and which Sysible apps to set up ---------------------------------------
 # Asked for as "on install it should ask to install slop". The apps were only

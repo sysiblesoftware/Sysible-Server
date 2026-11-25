@@ -1,19 +1,20 @@
 Template: sysible/tools
 Type: multiselect
-Choices: terraform, vault, consul, nomad, packer, boundary, aws-cli
+Choices: terraform (BUSL, not open source), vault (BUSL, not open source), consul (BUSL, not open source), nomad (BUSL, not open source), packer (BUSL, not open source), boundary (BUSL, not open source), aws-cli (Amazon's own channel)
 Default:
-Description: Optional software to install
- These tools are NOT bundled in the Sysible Server image, so they are
- offered here as a choice. HashiCorp's tools (terraform, vault, consul, nomad,
- packer, boundary) are BUSL-1.1 licensed, not open source; selecting them means
- you accept HashiCorp's licence (https://www.hashicorp.com/bsl). aws-cli is
- installed from Amazon's official channel.
+Description: Extra software to install on first boot
+ Tick nothing to install nothing. None of this is bundled in the image, which
+ is why it is offered rather than assumed.
  .
- Anything you select is installed automatically the first time this system boots
- with a working network connection. OpenTofu (the open Terraform drop-in),
- gcloud, the Azure CLI, Docker, kubectl, Helm and Ansible are already included.
+ The six HashiCorp tools are BUSL-1.1 licensed and NOT open source -- ticking
+ one means accepting that licence (https://www.hashicorp.com/bsl). That is why
+ each line says so, instead of one warning above a list of bare names.
  .
- You can add or remove these tools at any time later with:  sudo sysible-tools
+ You probably do not need terraform: OpenTofu, the open drop-in, is already
+ installed. So are gcloud, the Azure CLI, Docker, kubectl, Helm and Ansible.
+ .
+ Whatever you tick is installed on the first boot with a working network, and
+ can be changed afterwards with: sudo sysible-tools -- the same checklist.
 
 Template: sysible/apps
 Type: multiselect
