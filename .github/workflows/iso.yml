@@ -272,22 +272,22 @@ jobs:
             Includes the Sysible Controller CE installer.
 
             ### New in ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
-            * **Sysible Server has its own mark.** It and Sysible Workstation had
-              been shipping one identical logo, told apart only by the wordmark
-              printed beside it. Server now carries stacked rack units.
-            * **The boot screen renders on every machine.** The GRUB theme used
-              glyphs with no font fallback at the boot resolution, so they came up
-              as empty boxes. It is ASCII now.
-            * **`apt upgrade` works from this repository again.** Packages were
-              published at fixed pool paths without a unique version, so a rebuild
-              rewrote a path the CDN had been told to cache permanently and apt
-              refused the mismatch with `File has unexpected size`. Versions now
-              carry a timestamp, the run id and the commit, and a release reaches
-              the `sysible-stable` suite instead of failing on a step that could not
-              replace an already-published repository.
-            * **A firewall is installed.** `nftables` is named on the product page
-              and looked for by `sysible verify`, and nothing installed it — a fresh
-              machine reported "no firewall configured".
+            * **Choosing the Sysible apps during the install works.** The
+              installer asks which to set up, and the answer was being thrown
+              away: whatever you picked, an empty selection was recorded and the
+              first boot installed nothing and said nothing. The choice now
+              reaches `install-sysible`, and a failure is retried and reported at
+              login rather than discarded.
+            * **That page is a checklist.** It had been a single-choice list that
+              mixed app names with "all" and "none", so the only way to get two
+              apps was to take every app. It is four tickboxes now — the SLOP
+              gateway, the Controller, SLEP and Connect — the same four
+              `sudo install-sysible` offers afterwards. Tick nothing to set
+              nothing up.
+            * **The installer wears the Server mark.** The rack-unit logo had
+              reached the boot screen but not the Debian Installer, whose banner
+              still carried the older shared Sysible mark at the top of every
+              page.
 
             ### Downloads (amd64 & arm64)
             The ISO is ~3.4 GB, over GitHub's 2 GB per-file limit, so each build ships
