@@ -1,7 +1,10 @@
 #!/bin/sh
 # Sysible — first-boot install of the apps the operator chose DURING the install.
 #
-# The installer asks (preseed early_command -> sysible-ask-tools, question
+# Driven by /etc/sysible/apps.wanted if a file is there. Nothing writes one
+# now -- the installer's debconf question was removed; see install-selected-tools
+# beside this file. `install-sysible` after boot is the supported route.
+# Formerly the installer asked (preseed early_command -> sysible-ask-tools, question
 # sysible/apps) and records the answer in the target at /etc/sysible/apps.wanted.
 # This runs on the first networked boot and hands it to install-sysible.
 #

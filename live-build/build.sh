@@ -246,8 +246,6 @@ export SYSIBLE_PRESEED="$PWD/config/includes.binary/preseed.cfg"
 # nothing said so. Reported as "I still didn't see a menu to install SLOP or
 # slep". They stay on the ISO root as well, as the fallback for an hd-media
 # install.
-export SYSIBLE_ASK_TOOLS="$PWD/config/includes.binary/sysible-ask-tools"
-export SYSIBLE_ASK_TEMPLATES="$PWD/config/includes.binary/sysible-tools.templates"
 # Stage the build, so the chroot can be given a CA store in between debootstrap
 # and the first apt update. `lb build` is precisely `lb bootstrap; lb chroot; lb
 # binary; lb source`, and each stage guards itself with a stamp under .build/ --
@@ -577,18 +575,6 @@ for i in binary/install/initrd.gz binary/install/gtk/initrd.gz; do
         echo "  [FAIL] $i has NO preseed.cfg — the installed system would have no bootloader" >&2
         gate_fail=1
     fi
-    # The preseed's early_command runs BEFORE any media is mounted, so these two
-    # must be in the initrd with it. On the ISO root alone the question is
-    # silently never asked -- `|| true` on the early_command hides it, by design,
-    # so nothing in the log would say the apps prompt had gone missing.
-    for _need in sysible-ask-tools sysible-tools.templates; do
-        if printf '%s\n' "$_listing" | grep -qE "^(\./)?${_need}$"; then
-            echo "  [ok]   $_need inside $i"
-        else
-            echo "  [FAIL] $i has NO $_need — the install would never ask which apps to set up" >&2
-            gate_fail=1
-        fi
-    done
 done
 # The UEFI GRUB menu MUST offer an active installer entry. live-build ships none
 # there (only commented "Alternate …" examples), so a UEFI boot — VMware Fusion's
