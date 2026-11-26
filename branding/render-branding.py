@@ -43,6 +43,8 @@ GREEN = (109, 219, 115)      # #6ddb73
 BLUE = (122, 162, 255)       # #7aa2ff
 FONT = os.path.join(ROOT, "branding/fonts/Sora.ttf")   # Sora (OFL), SES rebrand
 WORDMARK = "SYSIBLE SERVER"
+ACCENT     = (109, 219, 115)  # #6ddb73 — the mark's ring green
+BANNER_BG  = (11, 16, 22)     # #0b1016 — gtkrc base[NORMAL], the d-i page field
 
 
 def _sora(size):
@@ -259,6 +261,45 @@ def hlockup(W, H, fg):
     return canvas
 
 
+def installer_banner(W, H):
+    """The Debian Installer's header banner — the strip at the top of EVERY
+    installer page.
+
+    Deliberately NOT hlockup(): d-i draws this left-aligned in a strip whose
+    right side stays empty, and it is the one place in the brand that sets
+    "Sysible" and "Server" in two colours instead of one. That layout is older
+    than the rack mark and is kept exactly; the proportions below reproduce the
+    shipped 561x75 banner to the pixel.
+
+    WHAT HAD GONE WRONG: this file was not generated here at all. build() was
+    documented as covering "only the BOOT-menu artwork and the REPO badges",
+    because the installer assets were swept out with the desktop ones when the
+    GUI was removed -- but a headless server still shows this on every page of
+    its installer. So when the mark became the rack glyph on 25 Nov, every
+    asset in build() was re-rendered and this one kept the old "S" from
+    18 August. It was not in the manifest either, so the guard could not see it.
+    """
+    canvas = Image.new("RGB", (W, H), BANNER_BG)
+    pad, s_px = round(H * 0.173), round(H * 0.72)
+    gap, wordgap = round(H * 0.24), round(H * 0.12)
+    m = mark(s_px)
+    canvas.paste(m, (pad, (H - s_px) // 2), m)
+    d = ImageDraw.Draw(canvas)
+    # "Sysible" is set to a fixed fraction of the strip height — the size the
+    # shipped banner has always used — and "Server" follows in the ring green.
+    size = 8
+    while size < H and d.textlength("Sysible", font=_sora(size + 1)) <= H * 1.4533:
+        size += 1
+    font = _sora(size)
+    asc, desc = font.getmetrics()
+    ty = (H - (asc + desc)) // 2
+    x = pad + s_px + gap
+    d.text((x, ty), "Sysible", font=font, fill=FG_DARK)
+    d.text((x + d.textlength("Sysible", font=font) + wordgap, ty),
+           "Server", font=font, fill=ACCENT)
+    return canvas
+
+
 def vlockup(W, H, fg):
     """Vertical lockup: mark on top, SYSIBLE SERVER beneath. Transparent."""
     canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -310,7 +351,10 @@ def build():
     HEADLESS SERVER SCOPE: this image ships no desktop, no Calamares, no GDM and
     no app-grid icons, so only the BOOT-menu artwork and the REPO badges/avatars
     are rendered from the mark here (the desktop/installer assets that the
-    GUI/desktop build generated were removed with the GUI). The dict order below is the
+    GUI/desktop build generated were removed with the GUI) -- PLUS the Debian
+    Installer banner, which was swept out with them and should not have been:
+    the installer is the one graphical surface a headless server still shows.
+    The dict order below is the
     manifest order — keep it stable so regeneration produces a byte-identical
     manifest layout."""
     A = {}
@@ -326,6 +370,13 @@ def build():
     A[L("branding/splash.png")] = splash(1920, 1080)
     A[L("bootloaders/isolinux/splash.png")] = splash(800, 600)
     A[("tga", L("binary_grub/splash.tga"))] = splash(640, 480)
+    # Debian Installer header banner. Both names are written because the binary
+    # hook copies $SYSIBLE_INSTALLER_BANNER over logo_installer.png AND
+    # logo_debian.png inside each initrd; keeping them identical here means the
+    # repo can never disagree with itself about which one is current.
+    _banner = installer_banner(561, 75)
+    A[G("branding/installer/logo_installer.png")] = _banner
+    A[G("branding/installer/logo_debian.png")] = _banner
     # README badges.
     A[G(".github/sysible-logo-dark.png")] = hlockup(980, 260, FG_DARK)
     A[G(".github/sysible-logo-light.png")] = hlockup(980, 260, FG_LIGHT)
