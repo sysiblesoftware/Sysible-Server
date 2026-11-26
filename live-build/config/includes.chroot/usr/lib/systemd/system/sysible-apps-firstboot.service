@@ -12,6 +12,11 @@ After=network-online.target docker.service
 # repos. Ordering after that unit keeps two long apt/network jobs off each
 # other's back on the very first boot rather than racing for dpkg's lock.
 After=sysible-tools-firstboot.service
+# The baked base images must be in Docker's store BEFORE anything builds,
+# or the build reaches for Docker Hub and a host without it fails on an
+# image this machine is already carrying.
+After=sysible-base-images.service
+Wants=sysible-base-images.service
 
 [Service]
 Type=oneshot

@@ -31,4 +31,9 @@ echo "sysible-firstboot: enabled first-boot install of installer-selected tools"
 # only appeared if you already knew `install-sysible` existed.
 chmod 0755 /usr/lib/sysible/install-selected-apps 2>/dev/null || true
 systemctl enable sysible-apps-firstboot.service 2>/dev/null || true
+
+# Loads the baked container base images into Docker's store. Without it the
+# tarballs in /usr/share/sysible/base-images are inert and a build on a host
+# with no registry access fails on images the machine already has.
+systemctl enable sysible-base-images.service 2>/dev/null || true
 echo "sysible-firstboot: enabled first-boot install of installer-selected apps"
