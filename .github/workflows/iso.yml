@@ -412,6 +412,26 @@ jobs:
             Includes the Sysible Controller CE installer.
 
             ### New in ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+            * **Choosing software during the install now installs it.** Ticking `slop`
+              — or any one app — recorded the choice and then, on a host that could not
+              reach GitHub and Docker Hub, did nothing with it: the first-boot installer
+              checked for a network before it looked at the disk, gave up after three
+              tries and left a note at the login prompt. The container images and the
+              platform's source were already on the machine. That check now runs only
+              when something genuinely needs downloading, so what you tick during the
+              install is running when you first log in — no command to type, and no
+              network required.
+            * **Nothing is fetched that the image already ships.** The apps are taken
+              from the platform checkout in the image, which carries all three of them,
+              rather than cloned from GitHub a second time. A host that did clone them
+              keeps using its own checkout, so `sysiblectl <product> update` goes on
+              tracking the repository you cloned.
+            * **A host that really is just offline still gets the old, clear message.**
+              The network check was made conditional, not removed. Source without the
+              images still has to reach a registry, so that case keeps the check rather
+              than failing later inside a build.
+
+            **Earlier, in 1.0.7 — the airgapped install.**
             * **The platform installs on an airgapped network.** The ISO now
               carries every Sysible container image, built beforehand, plus the
               platform's source. A first boot loads them and brings the whole
