@@ -201,3 +201,67 @@ class TestTheReleaseCheck:
     def test_the_service_cannot_leave_the_system_degraded(self):
         unit = (UNITS / "sysible-release-check.service").read_text()
         assert "|| true" in unit, "a no-network boot must not show as a failed unit"
+
+
+class TestItSaysHowToSignInToWhatItSetUp:
+    """Reported as "sysible/sysible isn't the default password for slop".
+
+    The password is right; the username is `admin`. Nothing on the machine said
+    so. The installer offers SLOP during the install, the work happens
+    unattended on the first networked boot, and SLOP's IdP prints its bootstrap
+    account into a CONTAINER log — which an operator at this console never sees.
+    So the machine came up serving a web front door with no way to get in short
+    of reading the manual it did not ship with.
+    """
+
+    def _set_up(self, machine, what="slop"):
+        machine.installed("sysible-linux-operations-platform")
+        machine.state_says(behind="")
+        (machine.etc / "apps-installed").write_text(what + "\n")
+
+    def test_it_names_the_username_the_operator_could_not_guess(self, machine):
+        self._set_up(machine)
+        out = machine.hint().stdout
+        assert "admin" in out, "the account name is still nowhere on the machine"
+
+    def test_it_gives_the_whole_credential(self, machine):
+        self._set_up(machine)
+        out = machine.hint().stdout
+        assert "admin" in out and "sysible" in out, f"incomplete sign-in: {out!r}"
+
+    def test_it_says_the_default_is_public(self, machine):
+        """Printing it is only defensible BECAUSE it is documented. Say so, or
+        it reads as the machine leaking a secret at every login."""
+        self._set_up(machine)
+        assert "public" in machine.hint().stdout
+
+    def test_it_says_where_to_change_it(self, machine):
+        self._set_up(machine)
+        assert "/account" in machine.hint().stdout
+
+    def test_it_says_where_to_open_it(self, machine):
+        self._set_up(machine)
+        assert "https://" in machine.hint().stdout
+
+    def test_it_can_be_silenced(self, machine):
+        self._set_up(machine)
+        assert "apps-installed" in machine.hint().stdout, \
+            "no way to stop a credential printing at every login"
+
+    def test_nothing_is_said_when_slop_was_not_installed(self, machine):
+        """Controller and SLEP have their own first-run screens — this line is
+        about SLOP's bootstrap account specifically."""
+        self._set_up(machine, what="controller slep")
+        assert "admin" not in machine.hint().stdout
+
+    def test_nothing_is_said_without_the_marker(self, machine):
+        machine.installed("sysible-linux-operations-platform")
+        machine.state_says(behind="")
+        assert "admin" not in machine.hint().stdout
+
+    def test_nothing_is_said_before_anything_is_installed(self, machine):
+        """A marker with no checkout means the install did not finish."""
+        (machine.etc / "apps-installed").write_text("slop\n")
+        out = machine.hint().stdout
+        assert "admin" not in out
+        assert "No Sysible software is installed" in out

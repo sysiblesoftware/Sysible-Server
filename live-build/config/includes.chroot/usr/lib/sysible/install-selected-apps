@@ -59,6 +59,14 @@ fi
 # shellcheck disable=SC2086
 if install-sysible -y $sel; then
   echo "install-sysible $sel: OK"
+  # Record WHAT was set up, so the login hint can tell the operator how to sign
+  # in to it. Without this a machine that installed SLOP unattended on first
+  # boot presents a web front door and nothing anywhere says the account is
+  # `admin` -- which is how "sysible/sysible isn't the default password" gets
+  # reported. The credential is the documented, public one; the file holds only
+  # the product list.
+  mkdir -p "$(dirname "$WANT")" 2>/dev/null || true
+  printf '%s\n' "$sel" > /etc/sysible/apps-installed 2>/dev/null || true
   rm -f "$WANT" "$TRIES"
   echo "=== done ==="
   exit 0
