@@ -288,6 +288,16 @@ jobs:
               reached the boot screen but not the Debian Installer, whose banner
               still carried the older shared Sysible mark at the top of every
               page.
+            * **kubectl, Helm, k9s and OpenTofu are guaranteed, not best-effort.**
+              Three of them are vendor binaries with no apt package, so they cannot
+              be dependencies — the build now asserts each is on `PATH` in the
+              finished image and fails if one is missing. k9s in particular was
+              optional: a failed download or an unfetchable checksum shipped an
+              image without it and said so only in a build log.
+            * **`openssl` is a hard dependency.** `install-sysible slop` mints its
+              sign-in, updater and agent secrets with `openssl rand -hex 32`, and
+              openssl was a Recommends — which `--no-install-recommends` drops, on
+              a host the installer itself offers to set the platform up on.
 
             ### Downloads (amd64 & arm64)
             The ISO is ~3.4 GB, over GitHub's 2 GB per-file limit, so each build ships
