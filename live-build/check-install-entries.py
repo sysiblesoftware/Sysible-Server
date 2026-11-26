@@ -25,7 +25,8 @@ import sys
 
 # Labels that announce themselves as something other than the normal install.
 VARIANT = re.compile(
-    r"\b(text\s*mode|expert|rescue|automat|speech|serial|advanced|graphical\s+expert)\b",
+    r"\b(text\s*mode|text\s+installer|expert|rescue|automat|speech|serial|"
+    r"advanced|graphical\s+expert)\b",
     re.I)
 
 
@@ -43,18 +44,53 @@ def parse_grub(text):
 def parse_isolinux(text):
     """[(label, initrd)] for every `label` block that loads an installer initrd.
 
+    The label carries its SUBMENU CONTEXT, because that is how the menu reads
+    to a person. Debian nests four entries under "Advanced install options >
+    Text installer", each plainly called "Install" -- which is honest in place
+    and looks like an undeclared text entry when the tree is flattened. The
+    first version of this checker flattened it, and then complained about
+    Debian's own correct menu.
+
     The visible name is `menu label`; fall back to the internal label name when
     a block has none.
     """
     out = []
-    blocks = re.split(r"(?m)^label\s+", text)[1:]
-    for b in blocks:
+    # Walk once to learn which submenu each `label` line sits inside. syslinux
+    # opens a submenu with `menu begin` and names it with the `menu label` that
+    # follows; `menu end` closes it.
+    ctx, stack, pending = {}, [], False
+    for n, line in enumerate(text.splitlines()):
+        st = line.strip()
+        if re.match(r"menu\s+begin\b", st, re.I):
+            stack.append(None)
+            pending = True
+        elif re.match(r"menu\s+end\b", st, re.I):
+            if stack:
+                stack.pop()
+            pending = False
+        elif pending and re.match(r"menu\s+label\b", st, re.I):
+            if stack:
+                stack[-1] = re.sub(r"^menu\s+label\s+", "", st, flags=re.I).replace("^", "")
+            pending = False
+        elif re.match(r"label\s+\S", st, re.I):
+            ctx[n] = [t for t in stack if t]
+    # Line number of each block start, in the same order as the split below.
+    starts = [n for n in sorted(ctx)]
+    # AT ANY INDENTATION. Entries inside "Advanced install options" are
+    # indented, and anchoring `label` at column 0 meant the whole Advanced
+    # tree -- Graphical installer and Text installer, four entries each -- was
+    # invisible to this check. That is exactly the part of the menu nobody had
+    # ever been able to see, so it is exactly the part that must be read.
+    blocks = re.split(r"(?m)^[ \t]*label[ \t]+", text)[1:]
+    for idx, b in enumerate(blocks):
         name = b.splitlines()[0].strip()
-        ml = re.search(r"^\s*menu label\s+(.+)$", b, re.M)
+        ml = re.search(r"^[ \t]*menu label[ \t]+(.+)$", b, re.M)
         label = (ml.group(1).strip().replace("^", "") if ml else name)
-        i = re.search(r"^\s*initrd\s+(\S+)", b, re.M)
+        trail = ctx.get(starts[idx], []) if idx < len(starts) else []
+        full = " > ".join(trail + [label])
+        i = re.search(r"^[ \t]*initrd[ \t]+(\S+)", b, re.M)
         if i and "/install" in i.group(1):
-            out.append((label, i.group(1)))
+            out.append((full, i.group(1)))
     return out
 
 
@@ -84,6 +120,16 @@ def check(path, text, arch):
             problems.append(
                 f"{path}: {label!r} boots {initrd} -- a TEXT installer, and its "
                 f"name does not say so. An operator picking it lands in newt.")
+        # AND THE INVERSE, which the first version of this gate missed and
+        # ISO #95 shipped: an entry that SAYS text mode while booting the
+        # graphical installer. That happened because the relabel was a global
+        # regex and renamed "^Install" in both the Graphical and the Text
+        # submenu, so the graphical one ended up advertised as text. A menu
+        # that lies in either direction is not a professional menu.
+        if re.search(r"\btext\s*mode\b", label, re.I) and is_graphical(initrd):
+            problems.append(
+                f"{path}: {label!r} says text mode but boots {initrd}, the "
+                f"GRAPHICAL installer. The label and the payload disagree.")
     return problems, notes, entries
 
 

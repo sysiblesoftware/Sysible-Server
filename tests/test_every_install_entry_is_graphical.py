@@ -177,3 +177,105 @@ def test_the_build_checks_the_finished_iso_not_its_own_output():
         "fixing only one is how this shipped twice")
     assert "gate_fail=1" in src[m.start():m.start() + 600], (
         "a failing check must fail the build")
+
+
+# ---------------------------------------------------------------------------
+# The menu this build ACTUALLY receives, copied from ISO #95's job log
+# ---------------------------------------------------------------------------
+# Until #95 nobody had seen it. build.sh was piping a grep through `head`, so
+# ten lines were visible and the Advanced tree never was. It turns out Debian
+# nests the four installer variants TWICE -- once under "Graphical installer",
+# once under "Text installer" -- and both call their first entry "^Install".
+REAL_MENU = """default installstart
+label installstart
+\tmenu label Start ^installer
+\tlinux /install/gtk/vmlinuz
+\tinitrd /install/gtk/initrd.gz
+label installstartspeech
+\tmenu label Start installer with ^speech synthesis
+\tlinux /install/gtk/vmlinuz
+\tinitrd /install/gtk/initrd.gz
+menu begin advanced
+\tmenu label ^Advanced install options
+\tlabel mainmenu
+\t\tmenu label ^Back..
+\tmenu begin gtkmenu
+\t\tmenu label ^Graphical installer
+\t\tlabel installgui
+\t\t\tmenu label ^Install
+\t\t\tlinux /install/gtk/vmlinuz
+\t\t\tinitrd /install/gtk/initrd.gz
+\t\tlabel expertgui
+\t\t\tmenu label E^xpert install
+\t\t\tlinux /install/gtk/vmlinuz
+\t\t\tinitrd /install/gtk/initrd.gz
+\tmenu end
+\tmenu begin textmenu
+\t\tmenu label ^Text installer
+\t\tlabel install
+\t\t\tmenu label ^Install
+\t\t\tlinux /install/vmlinuz
+\t\t\tinitrd /install/initrd.gz
+\t\tlabel expert
+\t\t\tmenu label E^xpert install
+\t\t\tlinux /install/vmlinuz
+\t\t\tinitrd /install/initrd.gz
+\tmenu end
+menu end
+"""
+
+REWRITE = ROOT / "live-build/rewrite-installcfg.py"
+
+
+def _rewritten(text):
+    r = subprocess.run([sys.executable, str(REWRITE)], input=text,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_the_checker_sees_entries_inside_the_advanced_submenu(tmp_path):
+    """They are INDENTED. Anchoring `label` at column 0 made the entire
+    Advanced tree invisible, which is why ISO #95 passed a gate it should have
+    failed."""
+    r = run_check(_rewritten(REAL_MENU), "amd64", tmp_path)
+    assert "Advanced install options > Graphical installer > Install" in r.stdout, (
+        "the checker cannot see entries nested in a submenu:\n" + r.stdout)
+    assert "Advanced install options > Text installer > Install" in r.stdout
+
+
+def test_the_real_menu_passes_once_rewritten(tmp_path):
+    r = run_check(_rewritten(REAL_MENU), "amd64", tmp_path)
+    assert r.returncode == 0, (
+        "the menu this build actually produces was rejected:\n"
+        + r.stdout + r.stderr)
+
+
+def test_the_top_level_entry_is_branded_and_graphical():
+    out = _rewritten(REAL_MENU)
+    m = re.search(r"^label\s+installstart\b.*?menu label\s+([^\n]*)", out, re.M | re.S)
+    assert m and m.group(1).strip() == "Install Sysible Server", (
+        f"the entry an operator sees first is named {m and m.group(1)!r}")
+
+
+def test_debians_own_advanced_tree_is_left_alone():
+    """Renaming inside it is what produced two entries called "Install Sysible
+    Server (text mode)", one of them graphical. Debian's labels there are
+    already self-describing."""
+    out = _rewritten(REAL_MENU)
+    adv = out[out.index("Advanced install options"):]
+    assert "Graphical installer" in adv, "the Graphical installer submenu was renamed away"
+    assert "Text installer" in adv, "the Text installer submenu was renamed away"
+    assert "Sysible" not in adv, (
+        "the rewrite renamed something inside the Advanced tree; it must not:\n" + adv)
+
+
+def test_a_label_that_says_text_mode_must_not_boot_the_graphical_installer(tmp_path):
+    """The inverse of the original bug, and exactly what ISO #95 shipped."""
+    bad = ("label installgui\n\tmenu label Install Sysible Server (text mode)\n"
+           "\tinitrd /install/gtk/initrd.gz\n"
+           "label installstart\n\tmenu label Install Sysible Server\n"
+           "\tinitrd /install/gtk/initrd.gz\n")
+    r = run_check(bad, "amd64", tmp_path)
+    assert r.returncode != 0, "a menu whose label contradicts its payload was accepted"
+    assert "label and the payload disagree" in r.stderr

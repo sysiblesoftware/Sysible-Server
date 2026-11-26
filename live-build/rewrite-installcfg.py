@@ -24,45 +24,47 @@ orig = s
 # 1. The gtk kernel path does not exist on a Debian CD; share the one kernel.
 s = re.sub(r'(/install[^/\s]*)/gtk/vmlinuz', r'\1/vmlinuz', s)
 
-# 2. Relabel.
+# 2. Relabel -- BY BLOCK, and only the blocks that need it.
 #
-# TWO SHAPES, because the file this build actually gets is NOT the one Debian's
-# netinst CD carries. live-build's own isolinux/install.cfg template is the
-# single line "# FIXME"; the real file comes from the installer image, and on
-# the 25 Nov build it read:
+# This used to be two global regexes over the whole file:
 #
-#     label installstart
-#         menu label Start ^installer
-#         linux /install/gtk/vmlinuz
-#         initrd /install/gtk/initrd.gz
-#     label installstartspeech
-#         menu label Start installer with ^speech synthesis
+#     menu label ^Graphical install  ->  Install Sysible Server
+#     menu label ^Install            ->  Install Sysible Server (text mode)
 #
-# -- no "Graphical install", no "installgui", no plain "Install". So the two
-# patterns below matched NOTHING on every build, the relabel silently did
-# nothing, and the BIOS menu shipped saying "Start installer". The kernel
-# repoint above DID apply, so the script reported a change and nobody looked.
+# and the second one did real damage, visible for the first time in ISO #95's
+# log. The file this build receives nests FOUR entries under "Advanced install
+# options" twice over -- once under "Graphical installer" and once under "Text
+# installer" -- and both submenus label their first entry "^Install". So the
+# GRAPHICAL one was renamed "Install Sysible Server (text mode)", and the menu
+# ended up with two different entries under that identical name, one of them
+# booting the graphical installer. Debian's own labels were better than what we
+# replaced them with.
 #
-# Both shapes are handled, and a run that relabels nothing now says so and
-# fails rather than reporting success for a no-op.
-before = s
+# Two shapes, told apart by whether the top-level `installstart` block exists:
+#
+#   * the shape this build gets. Relabel ONLY the two top-level entries, which
+#     are the ones an operator sees first. The Advanced tree is already
+#     self-describing -- "Graphical installer > Install", "Text installer >
+#     Install" -- and is left exactly as Debian wrote it.
+#   * the netinst shape, which has a flat install/installgui pair and no
+#     submenus. There, naming them is the whole point.
+def _relabel(text, block, label):
+    """Rewrite the `menu label` of the `label <block>` stanza, if it is there."""
+    pat = re.compile(
+        r"(^label\s+" + re.escape(block) + r"\b.*?^\s*menu label\s+)[^\n]*",
+        re.M | re.S)
+    return pat.sub(lambda m: m.group(1) + label, text, count=1)
 
-# Order matters within the netinst shape: match the graphical label FIRST, or
-# the plain-install pattern also matches "Graphical install" and both entries
-# end up with the same name.
-s = re.sub(r'(menu label\s+)\^?Graphical install.*',
-           r'\1Install Sysible Server', s)
-s = re.sub(r'(menu label\s+)\^?Install\b(?!\s+Sysible).*',
-           r'\1Install Sysible Server (text mode)', s)
 
-# The shape this build actually receives. Speech synthesis is relabelled first
-# for the same reason: "Start ^installer" is a prefix of it.
-s = re.sub(r'(menu label\s+)Start installer with \^?speech synthesis.*',
-           r'\1Install Sysible Server (speech synthesis)', s)
-s = re.sub(r'(menu label\s+)Start \^?installer(?!.*Sysible).*',
-           r'\1Install Sysible Server', s)
+# Which shape is this? The build receives the submenu one; a netinst CD is flat.
+if re.search(r"^label\s+installstart\b", s, re.M):
+    s = _relabel(s, "installstart", "Install Sysible Server")
+    s = _relabel(s, "installstartspeech", "Install Sysible Server (speech synthesis)")
+else:
+    s = _relabel(s, "installgui", "Install Sysible Server")
+    s = _relabel(s, "install", "Install Sysible Server (text mode)")
 
-relabelled = s != before
+relabelled = s != orig
 
 # 3. Make the GRAPHICAL entry the default, so "just press enter" gets the dark
 #    installer rather than newt.
