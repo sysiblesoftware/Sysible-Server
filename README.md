@@ -123,3 +123,7 @@ sh scripts/verify-branding.sh             # fail fast if any has drifted
 - [sysible.com/security](https://sysible.com/security) — release signing key
 - [RELEASE.md](RELEASE.md) — how updates ship over apt
 - [roadmap.md](roadmap.md) — the phased plan
+
+## License
+
+Sysible Server is released under the **MIT License** — see [LICENSE](LICENSE).
