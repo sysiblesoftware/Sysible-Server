@@ -72,6 +72,15 @@ Depends: ${misc:Depends},
 # install-sysible falls back to it (with podman-docker) on a machine where
 # docker-ce could not be installed.
  podman, buildah, skopeo,
+# --- Sysible platform prerequisites ---
+# openssl: SLOP's installer mints five 64-hex secrets with `openssl rand -hex 32`
+# (the SSO shared secret, the updater secret, the Baseline gateway secret and
+# agent token, and the Flashback token). It has a /dev/urandom fallback, but the
+# platform the image exists to run must not depend on a fallback firing, and
+# `install-sysible slop` is one of the two questions the installer asks. It was a
+# Recommends, which apt installs by default and --no-install-recommends silently
+# drops -- and dropping it leaves the gateway unable to mint its own secrets.
+ openssl,
 Recommends:
 # Heavier pieces — installed by default, removable with --no-install-recommends.
 # This is the Sysible Server toolset MINUS the GUI: no GNOME/Calamares, no
@@ -84,7 +93,7 @@ Recommends:
 # databases (clients)
  postgresql-client, default-mysql-client, sqlite3, redis-tools,
 # security
- openssl, gnupg, fail2ban, auditd, apparmor, lynis,
+ gnupg, fail2ban, auditd, apparmor, lynis,
 # monitoring / CLI (contrib/backports on some suites — Recommends keeps them soft)
  btop, atop, iftop,
 # eza is Debian 13+; soft-depend so a bookworm build doesn't fail
