@@ -5,7 +5,10 @@ Documentation=https://sysible.com
 # the file once it succeeds (or once it has given up), so this is a one-shot on
 # the first networked boot and is skipped on every boot thereafter.
 ConditionPathExists=/etc/sysible/apps.wanted
-# Cloning from GitHub and building from Docker Hub both need the network.
+# Wanted, NOT required: an edition that ships the platform images and source
+# installs with no route out at all, and this must still run there. It is only
+# a host that has to clone from GitHub and build from Docker Hub that needs the
+# network, so waiting for it is an optimisation, never a precondition.
 Wants=network-online.target
 After=network-online.target docker.service
 # The tools the operator picked (terraform, kubectl, ...) install from vendor apt
