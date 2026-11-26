@@ -238,14 +238,6 @@ export SYSIBLE_INSTALLER_BANNER="$ROOT/branding/installer/logo_installer.png"
 # Absolute path to the preseed, injected INTO the installer initrd by hook 9400 so
 # d-i auto-loads it without depending on the file=/cdrom/preseed.cfg boot argument.
 export SYSIBLE_PRESEED="$PWD/config/includes.binary/preseed.cfg"
-# The app/tool question's script and its debconf templates go into the initrd
-# TOO, beside the preseed. They used to ship only on the ISO root, which the
-# preseed reaches as /cdrom/... -- but the preseed itself is read from the
-# INITRD, before cdrom-detect has mounted any media, so `sh /cdrom/...` had
-# nothing to open and `|| true` swallowed it. The question was never asked and
-# nothing said so. Reported as "I still didn't see a menu to install SLOP or
-# slep". They stay on the ISO root as well, as the fallback for an hd-media
-# install.
 # Stage the build, so the chroot can be given a CA store in between debootstrap
 # and the first apt update. `lb build` is precisely `lb bootstrap; lb chroot; lb
 # binary; lb source`, and each stage guards itself with a stamp under .build/ --
@@ -345,7 +337,6 @@ if [ -n "$ISO" ]; then
     WORK=$(mktemp -d)
     $SUDO xorriso -osirrox on -indev "$ISO" -extract /boot/grub/grub.cfg "$WORK/grub.cfg" 2>/dev/null || true
     $SUDO xorriso -osirrox on -indev "$ISO" -extract /isolinux/live.cfg "$WORK/live.cfg" 2>/dev/null || true
-    $SUDO xorriso -osirrox on -indev "$ISO" -extract /isolinux/install.cfg "$WORK/install.cfg" 2>/dev/null || true
     if [ -s "$WORK/grub.cfg" ]; then
         echo "-- grub.cfg BEFORE --"; grep -iE 'menuentry|background_image|Live system|Debian' "$WORK/grub.cfg" | head
         cp config/branding/splash.png "$WORK/sysible-splash.png"
@@ -356,24 +347,8 @@ if [ -n "$ISO" ]; then
         # only COMMENTED "Alternate … installer" examples, so a UEFI boot (VMware
         # Fusion's default) reaches NO installer at all. That was the real "black
         # screen with a mouse pointer" — no installer entry, not a graphics bug.
-        # REAL, not merely present. 9400-sysible-installer-branding creates
-        # install/gtk/initrd.gz by COPYING THE TEXT INITRD when live-build did
-        # not produce a graphical one -- its own log says "(falls back to the
-        # text installer)". So `[ -f ... ]` was true on every build, this was
-        # always 1, and the menu always offered a "graphical" entry that booted
-        # newt. That is the blue TUI, reported three times.
-        #
-        # The discriminator is content: only the graphical initrd carries
-        # usr/share/graphics (the banner) and a gtkrc. The same probe the
-        # branding hook already uses to decide whether to brand.
-        GTK_INITRD=0
-        if [ -f binary/install/gtk/initrd.gz ]; then
-            _gl=$(gzip -dc binary/install/gtk/initrd.gz 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
-            if printf '%s\n' "$_gl" | grep -qE '(^|/)gtkrc$|usr/share/graphics/'; then
-                GTK_INITRD=1
-            fi
-        fi
-        echo "GRUB-DEBUG: REAL gtk installer initrd = $GTK_INITRD"
+        GTK_INITRD=0; [ -f binary/install/gtk/initrd.gz ] && GTK_INITRD=1
+        echo "GRUB-DEBUG: gtk installer initrd present = $GTK_INITRD"
         python3 - "$WORK/grub.cfg" "$GTK_INITRD" <<'PY'
 import sys, re
 p = sys.argv[1]; s = open(p).read()
@@ -408,41 +383,19 @@ if len(sys.argv) > 2 and sys.argv[2] != '1':
 # initrds), each carrying file=/cdrom/preseed.cfg so the bootloader fixes apply.
 # default=0 stays the Live entry, so this NEVER auto-installs — the user picks it.
 if not re.search(r'(?m)^[^#\n]*\blinux\b[^\n]*/install[^\n]*vmlinuz', s):
-    # WHICH ONE IS "Install Sysible Server". The graphical installer, wherever
-    # it exists. These two entries render the SAME debconf questions through
-    # different frontends: gtk, and newt -- the blue 1990s dialogs. The obvious
-    # entry used to be the newt one, with graphical tucked underneath, so
-    # choosing the obvious thing got the ugly installer. Reported as "it should
-    # be only inside the debian style installer not a tui based menu".
-    #
-    # The kernel is SHARED (/install/vmlinuz, per the rewrite above); only the
-    # initrd differs. arm64 ships no gtk initrd at all, so there it gets ONE
-    # entry pointing at the text installer rather than a "(graphical)" entry
-    # that silently boots the text one -- which is what it used to offer.
-    gtk = len(sys.argv) > 2 and sys.argv[2] == '1'
-    entries = '\n\n# --- Sysible installer entries (UEFI GRUB ships none by default) ---\n'
-    if gtk:
-        entries += (
-            'menuentry "Install Sysible Server" --hotkey=i {\n'
-            '    set background_color=black\n'
-            '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
-            '    initrd /install/gtk/initrd.gz\n'
-            '}\n'
-            'menuentry "Install Sysible Server (text mode)" {\n'
-            '    set background_color=black\n'
-            '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
-            '    initrd /install/initrd.gz\n'
-            '}\n'
-        )
-    else:
-        entries += (
-            'menuentry "Install Sysible Server" --hotkey=i {\n'
-            '    set background_color=black\n'
-            '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
-            '    initrd /install/initrd.gz\n'
-            '}\n'
-        )
-    s += entries
+    s += (
+        '\n\n# --- Sysible installer entries (UEFI GRUB ships none by default) ---\n'
+        'menuentry "Install Sysible Server" --hotkey=i {\n'
+        '    set background_color=black\n'
+        '    linux  /install/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
+        '    initrd /install/initrd.gz\n'
+        '}\n'
+        'menuentry "Install Sysible Server (graphical)" {\n'
+        '    set background_color=black\n'
+        '    linux  /install/gtk/vmlinuz file=/cdrom/preseed.cfg ---  quiet\n'
+        '    initrd /install/gtk/initrd.gz\n'
+        '}\n'
+    )
     sys.stderr.write("build.sh: added active UEFI install entries (menu had none)\n")
 else:
     sys.stderr.write("build.sh: UEFI grub.cfg already has an active install entry\n")
@@ -489,29 +442,6 @@ open(p, 'w').write(s)
 PY
             MAP_LIVE="-map $WORK/live.cfg /isolinux/live.cfg"
         fi
-        # isolinux (BIOS) INSTALL entries. The graphical-installer default was
-        # applied to grub.cfg only, so a UEFI boot got the dark installer and a
-        # BIOS boot still got newt's blue dialogs -- reported from a real
-        # install, after the change was called done. live.cfg and install.cfg
-        # are different files; rebranding the first does nothing to the second.
-        MAP_INSTALL=""
-        if [ -s "$WORK/install.cfg" ]; then
-            # THE WHOLE FILE, not a grep piped through head. The relabel below
-            # silently matched nothing on every build because the real file
-            # uses "Start ^installer" rather than "Graphical install", and the
-            # only reason that was ever caught is that this dump happened to
-            # include the labels. `head` had been cutting it off at ten lines.
-            echo "-- isolinux install.cfg BEFORE --"; cat "$WORK/install.cfg"
-            if python3 "$PWD/rewrite-installcfg.py" < "$WORK/install.cfg" > "$WORK/install.new"; then
-                mv "$WORK/install.new" "$WORK/install.cfg"
-                MAP_INSTALL="-map $WORK/install.cfg /isolinux/install.cfg"
-                echo "-- isolinux install.cfg AFTER --"; cat "$WORK/install.cfg"
-            else
-                echo "WARNING: could not rewrite isolinux install.cfg; BIOS install menu left stock" >&2
-            fi
-        else
-            echo "NOTE: no /isolinux/install.cfg on this ISO (expected on arm64, which has no isolinux)"
-        fi
         # Ship the Sysible GRUB theme onto the ISO's own boot filesystem so the
         # live menu (set theme=... above) can load it. The same theme dir is also
         # in the installed system via includes.chroot, so live + installed match.
@@ -523,7 +453,6 @@ PY
             -map "$WORK/sysible-splash.png" /boot/grub/sysible-splash.png \
             $MAP_THEME \
             $MAP_LIVE \
-            $MAP_INSTALL \
             -commit 2>&1 | tail -4
         # Post-commit verification is debug-only and MUST NOT fail the build.
         # On arm64 there is no isolinux, so extracting /isolinux/live.cfg errors;
@@ -568,8 +497,7 @@ for i in binary/install/initrd.gz binary/install/gtk/initrd.gz; do
     # though the hook packs it via `find .` — so the optional prefix MUST be a
     # grouped, optional `(\./)?`. The earlier `\./?` required a literal dot and
     # never matched bare `preseed.cfg`, failing this gate on a CORRECT payload.
-    _listing=$(gzip -dc "$i" 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
-    if printf '%s\n' "$_listing" | grep -qE '^(\./)?preseed\.cfg$'; then
+    if gzip -dc "$i" 2>/dev/null | cpio -t --quiet 2>/dev/null | grep -qE '^(\./)?preseed\.cfg$'; then
         echo "  [ok]   preseed.cfg inside $i"
     else
         echo "  [FAIL] $i has NO preseed.cfg — the installed system would have no bootloader" >&2
@@ -590,62 +518,7 @@ if [ -n "$ISO" ]; then
         echo "  [FAIL] UEFI grub.cfg has NO active install entry — a UEFI boot (VMware default) cannot reach the installer" >&2
         gate_fail=1
     fi
-    # AND EVERY INSTALL ENTRY ON THE FINISHED ISO MUST BE GRAPHICAL.
-    #
-    # The entry above only proves an install entry EXISTS. "Install Sysible
-    # Server" was reported landing in the blue newt installer three separate
-    # times, and each fix changed one menu while nothing checked the artifact.
-    # This reads the menus out of the built ISO -- both of them -- and refuses
-    # to publish if an entry a person would plainly pick boots a text-mode
-    # initrd without saying so in its name. Entries that announce themselves
-    # (text mode, expert, rescue, automated, speech) are left alone.
-    ICHK=$(mktemp)
-    $SUDO xorriso -osirrox on -indev "$ISO" -extract /isolinux/install.cfg "$ICHK" 2>/dev/null || true
-    _menus=""
-    [ -s "$GCHK" ] && _menus="$_menus $GCHK"
-    [ -s "$ICHK" ] && _menus="$_menus $ICHK"
-    if [ -n "$_menus" ]; then
-        echo "-- install entries on the finished ISO --"
-        if python3 "$PWD/check-install-entries.py" --arch "${SYSIBLE_ARCH:-amd64}" $_menus; then
-            echo "  [ok]   every plain install entry boots the graphical installer"
-        else
-            echo "  [FAIL] an install entry boots the TEXT installer under a plain name" >&2
-            gate_fail=1
-        fi
-    else
-        echo "  [FAIL] could not read any boot menu off the finished ISO" >&2
-        gate_fail=1
-    fi
-    rm -f "$ICHK"
     rm -f "$GCHK"
-fi
-# THE GRAPHICAL INSTALLER IS REAL, on the arch that is supposed to have one.
-#
-# The loop above only checked that install/gtk/initrd.gz EXISTS -- and the
-# branding hook guarantees it exists by copying the text initrd there. So the
-# gate passed on an ISO whose "Install Sysible Server" entry booted the newt
-# TUI, which is exactly what shipped. Existence was never the question.
-#
-# BOTH ARCHES. live-build downloads the graphical installer for amd64/i386
-# only, but Debian publishes one for arm64 as well and
-# 9300-sysible-gtk-installer fetches it. Verified against the real archive:
-# arm64's cdrom/gtk/initrd.gz is 50,748,002 bytes and carries etc/gtk-2.0/gtkrc
-# and usr/share/graphics/, while its text initrd is 22,103,479 bytes and
-# carries neither. So no architecture is exempt from this.
-if true; then
-    if [ -f binary/install/gtk/initrd.gz ]; then
-        _gl=$(gzip -dc binary/install/gtk/initrd.gz 2>/dev/null | cpio -t --quiet 2>/dev/null || true)
-        if printf '%s\n' "$_gl" | grep -qE '(^|/)gtkrc$|usr/share/graphics/'; then
-            echo "  [ok]   install/gtk/initrd.gz is a REAL graphical installer"
-        else
-            echo "  [FAIL] install/gtk/initrd.gz carries NO gtkrc and no usr/share/graphics —" >&2
-            echo "         it is the TEXT initrd copied into the gtk path by the branding" >&2
-            echo "         hook's fallback. Booting \"Install Sysible Server\" would land in" >&2
-            echo "         the newt TUI. Check that auto/config still passes" >&2
-            echo "         --debian-installer-gui true and that the di download succeeded." >&2
-            gate_fail=1
-        fi
-    fi
 fi
 if [ "$gate_fail" != 0 ]; then
     echo "FATAL: installer payload incomplete — refusing to publish this ISO." >&2

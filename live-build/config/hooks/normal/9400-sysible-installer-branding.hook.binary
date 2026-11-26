@@ -134,7 +134,6 @@ for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null)
         did_preseed=yes; preseeded=$((preseeded + 1))
     fi
 
-
     # 2) branding — only meaningful for the graphical installer.
     if [ -n "$BANNER" ] && [ -f "$BANNER" ] && [ -d "$work/usr/share/graphics" ]; then
         for g in logo_installer.png logo_debian.png; do

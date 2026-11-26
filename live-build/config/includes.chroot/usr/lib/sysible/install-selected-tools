@@ -2,14 +2,8 @@
 # Sysible Server — first-boot install of the optional tools the operator
 # chose DURING the Debian install.
 #
-# Driven by /etc/sysible/tools.wanted if a file is there. NOTHING WRITES ONE
-# any more: the installer's debconf question was removed, because
-# preseed/early_command fires before the graphical frontend exists and could
-# only ever draw newt dialogs -- confirmed on two ISOs that carried the real
-# graphical installer and still showed the blue boxes. `sudo sysible-tools`
-# after boot is the supported route. Kept so an image that already wrote the
-# file keeps working; the unit's ConditionPathExists means it simply never runs
-# otherwise. This runs once, on the first
+# The installer wrote the selection to /etc/sysible/tools.wanted (see
+# preseed.cfg early_command + sysible-ask-tools). This runs once, on the first
 # networked boot, installs those tools via `sysible-tools`, then removes the
 # selection file so it never runs again. Driven by sysible-tools-firstboot.service.
 set -e

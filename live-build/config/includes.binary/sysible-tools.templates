@@ -1,0 +1,39 @@
+Template: sysible/tools
+Type: multiselect
+Choices: terraform, vault, consul, nomad, packer, boundary, aws-cli
+Default:
+Description: Optional software to install
+ These tools are NOT bundled in the Sysible Server image, so they are
+ offered here as a choice. HashiCorp's tools (terraform, vault, consul, nomad,
+ packer, boundary) are BUSL-1.1 licensed, not open source; selecting them means
+ you accept HashiCorp's licence (https://www.hashicorp.com/bsl). aws-cli is
+ installed from Amazon's official channel.
+ .
+ Anything you select is installed automatically the first time this system boots
+ with a working network connection. OpenTofu (the open Terraform drop-in),
+ gcloud, the Azure CLI, Docker, kubectl, Helm and Ansible are already included.
+ .
+ You can add or remove these tools at any time later with:  sudo sysible-tools
+
+Template: sysible/apps
+Type: select
+Choices: slop, all, controller, slep, connect, none
+Default: slop
+Description: Sysible platform to set up on first boot
+ This image ships the Sysible apps' source and installs them as containers.
+ Until now that only happened if you knew to run `install-sysible` after the
+ install had finished, which is not discoverable on a headless server.
+ .
+ slop        all three apps behind one front door at https://slop.lan/ and a
+             single sign-in (recommended)
+ all         all three apps, each on its own address, no gateway
+ controller / slep / connect
+             just that one
+ none        set nothing up; run `sudo install-sysible` yourself later
+ .
+ Whatever you pick is installed the first time this system boots with a working
+ network connection: the source is cloned from GitHub and the containers are
+ built from Docker Hub, so it needs both and it is not quick. Nothing listens
+ on the network until it completes.
+ .
+ You can change any of this afterwards with:  sudo install-sysible

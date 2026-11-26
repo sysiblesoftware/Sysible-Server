@@ -1,10 +1,7 @@
 #!/bin/sh
 # Sysible — first-boot install of the apps the operator chose DURING the install.
 #
-# Driven by /etc/sysible/apps.wanted if a file is there. Nothing writes one
-# now -- the installer's debconf question was removed; see install-selected-tools
-# beside this file. `install-sysible` after boot is the supported route.
-# Formerly the installer asked (preseed early_command -> sysible-ask-tools, question
+# The installer asks (preseed early_command -> sysible-ask-tools, question
 # sysible/apps) and records the answer in the target at /etc/sysible/apps.wanted.
 # This runs on the first networked boot and hands it to install-sysible.
 #
@@ -34,9 +31,7 @@ mkdir -p "$(dirname "$TRIES")" 2>/dev/null || true
 exec >>"$LOG" 2>&1
 echo "=== sysible apps first-boot install: $(date -u 2>/dev/null) ==="
 
-# Spaces SEPARATE the products -- `tr -d ' '` would turn "controller slep" into
-# one unknown product name. Only newlines and the edges are squeezed.
-sel=$(tr '\n' ' ' < "$WANT" | sed -e 's/[[:space:]][[:space:]]*/ /g' -e 's/^ //' -e 's/ $//')
+sel=$(tr -d ' \n' < "$WANT")
 echo "selected during install: [$sel]"
 case "$sel" in
   ''|none) echo "nothing selected"; rm -f "$WANT"; echo "=== done ==="; exit 0 ;;
@@ -55,12 +50,7 @@ fi
 
 # Non-interactive: the operator already chose this in the installer, so the
 # menu must not be shown to a boot with nobody watching it.
-# UNQUOTED on purpose: $sel is a LIST of products ("controller slep"), and
-# quoting it hands install-sysible one argument with a space in it, which it
-# rejects. -y because there is no terminal here; install-sysible's own
-# _interactive() tests for one, but saying it is better than relying on it.
-# shellcheck disable=SC2086
-if install-sysible -y $sel; then
+if install-sysible "$sel"; then
   echo "install-sysible $sel: OK"
   rm -f "$WANT" "$TRIES"
   echo "=== done ==="
