@@ -266,31 +266,28 @@ jobs:
 
             A live Debian-stable image with the whole server toolchain baked in:
             containers, Kubernetes, infrastructure-as-code, cloud CLIs, headless
-            libvirt/QEMU and the modern CLI set — installed with the graphical Debian
-            Installer, with a text-mode entry in the boot menu as the fallback. No
-            GNOME desktop, no GUI apps — the full engineering toolset, headless.
+            libvirt/QEMU and the modern CLI set — installed with the Debian
+            Installer. No GNOME desktop, no GUI apps — the full engineering
+            toolset, headless.
             Includes the Sysible Controller CE installer.
 
             ### New in ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
-            * **The installer is the graphical one.** Choosing "Install Sysible
-              Server" landed in the blue text-mode installer on every image ever
-              built. The graphical installer was never downloaded — live-build only
-              fetches it when asked, and it had not been — and the build then
-              created the path the menu pointed at by copying the TEXT installer
-              there, so the menu resolved and booted newt. The real graphical
-              installer now ships, and a build whose graphical entry is not backed
-              by a real graphical installer fails instead of publishing.
-            * **A firewall is actually installed.** `nftables` was named on the
-              product page and looked for by `sysible verify`, and nothing
-              installed it — a fresh machine reported "no firewall configured".
-            * **The extra-software question says what each thing is.** The six
-              HashiCorp tools are BUSL-1.1 and not open source; each line now says
-              so where it is read, rather than in a paragraph that does not share a
-              screen with the list at the installer's resolution. It also points
-              out that OpenTofu is already installed, so terraform is rarely wanted.
-            * **The BIOS boot menu carries the product name** instead of Debian's
-              "Start installer".
-            * **The repository has a README.**
+            * **Sysible Server has its own mark.** It and Sysible Workstation had
+              been shipping one identical logo, told apart only by the wordmark
+              printed beside it. Server now carries stacked rack units.
+            * **The boot screen renders on every machine.** The GRUB theme used
+              glyphs with no font fallback at the boot resolution, so they came up
+              as empty boxes. It is ASCII now.
+            * **`apt upgrade` works from this repository again.** Packages were
+              published at fixed pool paths without a unique version, so a rebuild
+              rewrote a path the CDN had been told to cache permanently and apt
+              refused the mismatch with `File has unexpected size`. Versions now
+              carry a timestamp, the run id and the commit, and a release reaches
+              the `sysible-stable` suite instead of failing on a step that could not
+              replace an already-published repository.
+            * **A firewall is installed.** `nftables` is named on the product page
+              and looked for by `sysible verify`, and nothing installed it — a fresh
+              machine reported "no firewall configured".
 
             ### Downloads (amd64 & arm64)
             The ISO is ~3.4 GB, over GitHub's 2 GB per-file limit, so each build ships
