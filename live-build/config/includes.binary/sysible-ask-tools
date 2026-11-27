@@ -25,18 +25,37 @@ if [ ! -r /usr/share/debconf/confmodule ]; then
 fi
 . /usr/share/debconf/confmodule 2>/dev/null || exit 0
 
+# ---- a breadcrumb, because everything here is deliberately non-fatal --------
+# Every db_* call below ends in `|| true` and `2>/dev/null`, which is right: an
+# OPTIONAL prompt must never fail someone's install. The cost is that when the
+# prompt does not appear there is no trace of it anywhere -- not a log line, not
+# an exit code. That is what made "it didn't ask me" take two days to pin down.
+# late_command copies this into the installed system.
+ASKLOG=/tmp/sysible-ask.log
+_log() { printf '%s\n' "$*" >> "$ASKLOG" 2>/dev/null || true; }
+_log "=== sysible-ask-tools: $(date -u 2>/dev/null || echo '?') ==="
+_log "running from: $0"
+_log "frontend=${DEBIAN_FRONTEND:-<unset>} priority=${DEBIAN_PRIORITY:-<unset>}"
+
 # WHERE THE TEMPLATES ARE. The initrd root first, for the same reason the
 # preseed runs us from there: at early_command time no media is mounted yet, so
 # /cdrom/... is not available and debconf-loadtemplate would quietly load
 # nothing -- leaving db_input with no template to show, which looks exactly like
 # "the question was never asked". /cdrom and /hd-media remain for an hd-media
 # install, where the ISO root copy is what exists.
+_found_templates=
 for T in /sysible-tools.templates /cdrom/sysible-tools.templates /hd-media/sysible-tools.templates; do
   if [ -f "$T" ]; then
-    debconf-loadtemplate sysible "$T" 2>/dev/null || true
+    _found_templates="$T"
+    if debconf-loadtemplate sysible "$T" 2>>"$ASKLOG"; then
+      _log "templates: loaded $T"
+    else
+      _log "templates: FAILED to load $T -- db_input will have nothing to show"
+    fi
     break
   fi
 done
+[ -n "$_found_templates" ] || _log "templates: NONE of the three paths exist -- no question can be shown"
 
 # critical priority so the question is shown even on an otherwise high-priority /
 # mostly-preseeded install. If the template failed to load, db_input just no-ops.
@@ -46,14 +65,28 @@ done
 # had chosen it. That is indistinguishable, from the outside, from never
 # being asked at all, which is how it was reported.
 db_fset sysible/tools seen false 2>/dev/null || true
-db_input critical sysible/tools 2>/dev/null || true
-db_go 2>/dev/null || true
+db_input critical sysible/tools 2>>"$ASKLOG"; _rc=$?
+# 30 means debconf SKIPPED it -- below the priority threshold, or already
+# seen. Nothing is displayed and db_get then returns the template default,
+# which from the outside is identical to never being asked.
+_tools_shown=yes
+if [ "$_rc" != 0 ]; then
+  _tools_shown=no
+  _log "tools: db_input returned $_rc (30 = skipped, NOT shown)"
+fi
+db_go 2>>"$ASKLOG" || _log "tools: db_go returned non-zero"
 
 RET=
 db_get sysible/tools 2>/dev/null || RET=
+_log "tools: answer=[${RET:-}]"
 # db_get yields comma+space separated ids ("vault, consul"); normalise to a plain
 # space-separated list the first-boot installer can pass straight to sysible-tools.
-printf '%s' "${RET:-}" | tr -d ' ' | tr ',' ' ' > /tmp/sysible-tools.wanted 2>/dev/null || true
+if [ "$_tools_shown" = yes ]; then
+  printf '%s' "${RET:-}" | tr -d ' ' | tr ',' ' ' > /tmp/sysible-tools.wanted 2>/dev/null || true
+else
+  _log "tools: NOT asked, so nothing is recorded -- the default is not an answer"
+  : > /tmp/sysible-tools.wanted 2>/dev/null || true
+fi
 
 # --- and which Sysible apps to set up ---------------------------------------
 # Asked for as "on install it should ask to install slop". The apps were only
@@ -68,8 +101,16 @@ printf '%s' "${RET:-}" | tr -d ' ' | tr ',' ' ' > /tmp/sysible-tools.wanted 2>/d
 # had chosen it. That is indistinguishable, from the outside, from never
 # being asked at all, which is how it was reported.
 db_fset sysible/apps seen false 2>/dev/null || true
-db_input critical sysible/apps 2>/dev/null || true
-db_go 2>/dev/null || true
+db_input critical sysible/apps 2>>"$ASKLOG"; _rc=$?
+# 30 means debconf SKIPPED it -- below the priority threshold, or already
+# seen. Nothing is displayed and db_get then returns the template default,
+# which from the outside is identical to never being asked.
+_apps_shown=yes
+if [ "$_rc" != 0 ]; then
+  _apps_shown=no
+  _log "apps: db_input returned $_rc (30 = skipped, NOT shown)"
+fi
+db_go 2>>"$ASKLOG" || _log "apps: db_go returned non-zero"
 
 # db_get sets $RET -- NOT a variable named after the question. The tools branch
 # above reads $RET correctly; this one set APPS= and then read $APPS, which is
@@ -79,7 +120,12 @@ db_go 2>/dev/null || true
 # the script instead of reading it.
 RET=
 db_get sysible/apps 2>/dev/null || RET=
+_log "apps: answer=[${RET:-}]"
 APPS="${RET:-}"
+if [ "$_apps_shown" != yes ]; then
+  _log "apps: NOT asked, so nothing is recorded -- the default is not an answer"
+  APPS=
+fi
 # A multiselect answers "a, b, c". Each choice's FIRST WORD is the id
 # install-sysible takes, so a choice can carry explanatory text -- "slop (all
 # apps behind one gateway)" -- without the parsing changing. sed, not awk: this

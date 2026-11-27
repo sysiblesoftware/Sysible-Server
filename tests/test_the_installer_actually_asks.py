@@ -157,3 +157,88 @@ def test_both_questions_are_still_checklists():
         assert re.search(r"^Type: multiselect", block.group(1), re.M), (
             f"{q} is no longer a checklist"
         )
+
+
+# ---------------------------------------------------------------------------
+# A question that was never put to anyone has no answer.
+#
+# db_input returns 30 when debconf SKIPS a question -- below the priority
+# threshold, already seen, or a noninteractive frontend. Nothing is displayed,
+# and db_get then returns the TEMPLATE DEFAULT. Recording that default installs
+# software the operator was never offered.
+#
+# That is what shipped: "didn't prompt me or ask if I wanted to install slop,
+# terraform, nothing!" -- on a machine that then started bringing the whole
+# platform up by itself, because `slop` is the default and nobody chose it.
+# ---------------------------------------------------------------------------
+CONFMODULE = """db_fset() {{ return 0; }}
+db_input() {{ return {rc}; }}
+db_go()    {{ return 0; }}
+db_get()   {{ RET="{answer}"; return 0; }}
+"""
+
+
+def _run_ask(tmp_path, *, rc, answer):
+    """Run the real script against a stub debconf; return (apps, tools, log)."""
+    sb = tmp_path
+    (sb / "usr/share/debconf").mkdir(parents=True)
+    (sb / "usr/share/debconf/confmodule").write_text(CONFMODULE.format(rc=rc, answer=answer))
+    binp = sb / "bin"; binp.mkdir()
+    lt = binp / "debconf-loadtemplate"
+    lt.write_text("#!/bin/sh\nexit 0\n"); lt.chmod(0o755)
+    shutil.copy(TEMPLATES, sb / "sysible-tools.templates")
+
+    src = ASK.read_text()
+    src = (src.replace("/usr/share/debconf/confmodule", str(sb / "usr/share/debconf/confmodule"))
+              .replace("ASKLOG=/tmp/sysible-ask.log", f"ASKLOG={sb}/ask.log")
+              .replace("/tmp/sysible-", f"{sb}/sysible-")
+              .replace(" /sysible-tools.templates ", f" {sb}/sysible-tools.templates "))
+    run = sb / "run.sh"; run.write_text(src)
+    p = subprocess.run(["sh", str(run)], capture_output=True, text=True,
+                       env={**os.environ, "PATH": f"{binp}:{os.environ['PATH']}"})
+    assert p.returncode == 0, f"the script must never fail an install: {p.stderr}"
+
+    def _read(n):
+        f = sb / f"sysible-{n}.wanted"
+        return f.read_text().strip() if f.is_file() else ""
+    log = (sb / "ask.log").read_text() if (sb / "ask.log").is_file() else ""
+    return _read("apps"), _read("tools"), log
+
+
+def test_a_question_that_was_never_shown_records_nothing(tmp_path):
+    apps, tools, log = _run_ask(
+        tmp_path, rc=30, answer="slop (one gateway in front of all three)")
+    assert apps == "", (
+        "the template default was recorded for a question debconf never "
+        "displayed, so the first boot installs software the operator was never "
+        "offered — exactly what was reported\n\n" + log
+    )
+    assert tools == ""
+    assert "NOT shown" in log, "nothing recorded WHY the question did not appear\n\n" + log
+
+
+def test_an_answered_question_is_recorded(tmp_path):
+    apps, _, log = _run_ask(
+        tmp_path, rc=0, answer="controller (fleet console), slep (infra automation)")
+    assert apps == "controller slep", (
+        "a real answer was lost or mangled — this is the path that must keep "
+        "working\n\n" + log
+    )
+
+
+def test_slop_collapses_the_other_picks(tmp_path):
+    """slop already runs all three; installing them again would collide."""
+    apps, _, _ = _run_ask(
+        tmp_path, rc=0,
+        answer="slop (one gateway in front of all three), connect (browser terminal)")
+    assert apps == "slop"
+
+
+def test_the_script_leaves_a_log_that_says_what_happened(tmp_path):
+    _, _, log = _run_ask(tmp_path, rc=30, answer="slop (one gateway in front of all three)")
+    for expected in ("sysible-ask-tools:", "templates:", "apps:"):
+        assert expected in log, (
+            f"the breadcrumb has no {expected!r} line. Every call in this script "
+            f"is deliberately non-fatal, so without the log a failure leaves no "
+            f"trace at all — which is what made this take two days\n\n" + log
+        )
