@@ -10,8 +10,12 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+# Same reason as sysible-apps-firstboot: installing vendor packages is a
+# minutes-long job and must not hold multi-user.target open, which is what
+# keeps systemd printing unit status over an operator's shell.
+Type=simple
+StandardOutput=journal
+StandardError=journal
 ExecStart=/usr/lib/sysible/install-selected-tools
 
 [Install]

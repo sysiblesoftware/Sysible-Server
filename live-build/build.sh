@@ -238,6 +238,17 @@ export SYSIBLE_INSTALLER_BANNER="$ROOT/branding/installer/logo_installer.png"
 # Absolute path to the preseed, injected INTO the installer initrd by hook 9400 so
 # d-i auto-loads it without depending on the file=/cdrom/preseed.cfg boot argument.
 export SYSIBLE_PRESEED="$PWD/config/includes.binary/preseed.cfg"
+
+# The app/tool question's script and its debconf templates go into the initrd
+# TOO, beside the preseed. They used to ship only on the ISO root, which the
+# preseed reaches as /cdrom/... -- but the preseed itself is read from the
+# INITRD, before cdrom-detect has mounted any media, so `sh /cdrom/...` had
+# nothing to open and `|| true` swallowed it. The question was never asked and
+# nothing said so. Reported as "I still didn't see a menu to install SLOP or
+# slep". They stay on the ISO root as well, as the fallback for an hd-media
+# install.
+export SYSIBLE_ASK_TOOLS="$PWD/config/includes.binary/sysible-ask-tools"
+export SYSIBLE_ASK_TEMPLATES="$PWD/config/includes.binary/sysible-tools.templates"
 # Stage the build, so the chroot can be given a CA store in between debootstrap
 # and the first apt update. `lb build` is precisely `lb bootstrap; lb chroot; lb
 # binary; lb source`, and each stage guards itself with a stamp under .build/ --

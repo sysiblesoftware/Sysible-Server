@@ -40,6 +40,12 @@ done
 
 # critical priority so the question is shown even on an otherwise high-priority /
 # mostly-preseeded install. If the template failed to load, db_input just no-ops.
+# Ask it even if debconf already considers it answered. db_input returns 30
+# and displays NOTHING for a question marked seen -- and db_get then hands
+# back the template default, so the install proceeds as though the operator
+# had chosen it. That is indistinguishable, from the outside, from never
+# being asked at all, which is how it was reported.
+db_fset sysible/tools seen false 2>/dev/null || true
 db_input critical sysible/tools 2>/dev/null || true
 db_go 2>/dev/null || true
 
@@ -56,6 +62,12 @@ printf '%s' "${RET:-}" | tr -d ' ' | tr ',' ' ' > /tmp/sysible-tools.wanted 2>/d
 # question above: ask here, record the answer, let the first networked boot do
 # the work (cloning and container builds need a network this installer has no
 # guarantee of).
+# Ask it even if debconf already considers it answered. db_input returns 30
+# and displays NOTHING for a question marked seen -- and db_get then hands
+# back the template default, so the install proceeds as though the operator
+# had chosen it. That is indistinguishable, from the outside, from never
+# being asked at all, which is how it was reported.
+db_fset sysible/apps seen false 2>/dev/null || true
 db_input critical sysible/apps 2>/dev/null || true
 db_go 2>/dev/null || true
 

@@ -22,8 +22,25 @@ After=sysible-platform-images.service
 Wants=sysible-platform-images.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+# NOT oneshot. multi-user.target waits for a oneshot unit to finish, and this
+# one clones nothing but does build and start containers -- minutes. Until the
+# target is reached systemd keeps painting unit status on the console, so an
+# operator who had already logged in watched "Started docker-<hash>.scope" lines
+# scroll over their shell prompt and reasonably asked what was going wrong.
+#
+# Type=simple marks the unit active as soon as the process starts, so boot
+# completes, systemd stops writing to the console, and the install carries on in
+# the background. The script still reports its own result to the journal, still
+# writes /etc/sysible/apps-failed when it gives up, and still logs in full to
+# /var/log/sysible-apps-firstboot.log.
+#
+# RemainAfterExit is meaningless for Type=simple and is gone: re-running is
+# already prevented by ConditionPathExists above, since the script removes
+# apps.wanted once it has succeeded or given up.
+Type=simple
+# The work writes to its own log; nothing from it belongs on the console.
+StandardOutput=journal
+StandardError=journal
 ExecStart=/usr/lib/sysible/install-selected-apps
 # Cloning four repos and building containers is not a 90-second job.
 TimeoutStartSec=0

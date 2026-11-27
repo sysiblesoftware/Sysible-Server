@@ -39,6 +39,8 @@ set -e
 
 BANNER="${SYSIBLE_INSTALLER_BANNER:-}"
 PRESEED="${SYSIBLE_PRESEED:-}"
+ASK_TOOLS="${SYSIBLE_ASK_TOOLS:-}"
+ASK_TEMPLATES="${SYSIBLE_ASK_TEMPLATES:-}"
 command -v cpio >/dev/null 2>&1 || { echo "sysible-installer: cpio unavailable — skipping." >&2; exit 0; }
 
 SYSIBLE_GTKRC='
@@ -115,7 +117,7 @@ emptyscale=,black
 fullscale=,green
 helpline=green,black'
 
-echo "sysible-installer: preseed='${PRESEED:-<unset>}' banner='${BANNER:-<unset>}'"
+echo "sysible-installer: preseed='${PRESEED:-<unset>}' ask-tools='${ASK_TOOLS:-<unset>}' banner='${BANNER:-<unset>}'"
 echo "sysible-installer: installer trees found:"
 find . -maxdepth 3 -type d -name 'install*' 2>/dev/null | sed 's/^/    /' || true
 
@@ -126,12 +128,26 @@ for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null)
     work=$(mktemp -d)
     gzip -dc "$initrd" 2>/dev/null | ( cd "$work" && cpio -idm --quiet 2>/dev/null ) || { rm -rf "$work"; continue; }
 
-    did_preseed=no; did_brand=no; did_palette=no
+    did_preseed=no; did_brand=no; did_palette=no; did_ask=no
 
     # 1) preseed at the initrd root — auto-loaded by d-i, no boot argument.
     if [ -n "$PRESEED" ] && [ -f "$PRESEED" ]; then
         cp -f "$PRESEED" "$work/preseed.cfg" && chmod 0644 "$work/preseed.cfg"
         did_preseed=yes; preseeded=$((preseeded + 1))
+    fi
+
+    # 1b) and what that preseed's early_command actually RUNS. It fires before
+    #     cdrom-detect has mounted anything, so a script left only on the ISO
+    #     root is unreachable at exactly the moment it is called -- and the
+    #     deliberate `|| true` there means the miss is invisible. Put both in
+    #     the initrd beside the preseed, where it can always open them.
+    if [ -n "$ASK_TOOLS" ] && [ -f "$ASK_TOOLS" ]; then
+        cp -f "$ASK_TOOLS" "$work/sysible-ask-tools" && chmod 0755 "$work/sysible-ask-tools"
+        did_ask=yes
+    fi
+    if [ -n "$ASK_TEMPLATES" ] && [ -f "$ASK_TEMPLATES" ]; then
+        cp -f "$ASK_TEMPLATES" "$work/sysible-tools.templates" \
+            && chmod 0644 "$work/sysible-tools.templates"
     fi
 
     # 2) branding — only meaningful for the graphical installer.
@@ -168,7 +184,7 @@ for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null)
     ( cd "$work" && find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 ) > "$initrd.new" \
         && mv -f "$initrd.new" "$initrd"
     rm -rf "$work"
-    echo "sysible-installer: patched $initrd (preseed=$did_preseed branding=$did_brand palette=$did_palette)"
+    echo "sysible-installer: patched $initrd (preseed=$did_preseed ask-tools=$did_ask branding=$did_brand palette=$did_palette)"
     patched=$((patched + 1))
 done
 echo "sysible-installer: $patched installer initrd(s): $preseeded preseeded, $branded branded, $paletted palette(s)."
