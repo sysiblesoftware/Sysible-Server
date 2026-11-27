@@ -17,21 +17,29 @@ Description: Optional software to install
 
 Template: sysible/apps
 Type: multiselect
-Choices: slop (one gateway in front of all three), controller (fleet console), slep (infra automation), connect (browser terminal)
-Default: slop (one gateway in front of all three)
+# Choices-C carries the ids the rest of the system uses; Choices carries what the
+# operator reads. db_get returns the C value, so the full product names below can
+# say what the software IS without changing a single thing downstream. cdebconf in
+# this build implements Choices-C (libdebconf.so) and d-i's own anna, localechooser
+# and console-setup-udeb templates use it. NO COMMAS inside a choice: the list is
+# comma-separated and an unescaped comma silently splits one entry into two.
+Choices-C: slop, controller, slep, connect
+Choices: Sysible Linux Operations Platform (SLOP) - one front door for all three, Sysible Controller - fleet console, Sysible Linux Engineering Platform (SLEP) - infrastructure automation, Sysible Connect - terminal in the browser
+Default: slop
 Description: Sysible software to set up on first boot
  Tick what this server should run. These are the same four choices that
  `sudo install-sysible` offers after the install, so nothing chosen here is
  final.
  .
- "slop" puts the Controller, SLEP and Connect behind one front door at
- https://slop.lan/ with a single sign-in. It is the recommended choice and it
- already covers all three, so ticking it alongside the others adds nothing --
- if it is ticked, it is what gets installed.
+ The Sysible Linux Operations Platform (SLOP) puts the Sysible Controller, the
+ Sysible Linux Engineering Platform (SLEP) and Sysible Connect behind one front
+ door at https://slop.lan/ with a single sign-in. It is the recommended choice
+ and it already covers all three, so ticking it alongside the others adds
+ nothing -- if it is ticked, it is what gets installed.
  .
- The other three are the apps on their own addresses: controller is the fleet
- console, slep is infrastructure automation, connect is a terminal in the
- browser.
+ The other three are the same applications on their own addresses: the Sysible
+ Controller is the fleet console, the Sysible Linux Engineering Platform (SLEP)
+ is infrastructure automation, and Sysible Connect is a terminal in the browser.
  .
  Tick nothing to set nothing up. Any of this can be changed afterwards with:
  sudo install-sysible

@@ -41,6 +41,7 @@ BANNER="${SYSIBLE_INSTALLER_BANNER:-}"
 PRESEED="${SYSIBLE_PRESEED:-}"
 ASK_TOOLS="${SYSIBLE_ASK_TOOLS:-}"
 ASK_TEMPLATES="${SYSIBLE_ASK_TEMPLATES:-}"
+ASK_HOOK="${SYSIBLE_ASK_HOOK:-}"
 command -v cpio >/dev/null 2>&1 || { echo "sysible-installer: cpio unavailable — skipping." >&2; exit 0; }
 
 SYSIBLE_GTKRC='
@@ -121,14 +122,14 @@ echo "sysible-installer: preseed='${PRESEED:-<unset>}' ask-tools='${ASK_TOOLS:-<
 echo "sysible-installer: installer trees found:"
 find . -maxdepth 3 -type d -name 'install*' 2>/dev/null | sed 's/^/    /' || true
 
-patched=0; preseeded=0; branded=0; paletted=0; worded=0
+patched=0; preseeded=0; branded=0; paletted=0; worded=0; hooked=0
 # BY PATH, not by content — a text-mode installer initrd carries no graphics.
 for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null); do
     gzip -t "$initrd" 2>/dev/null || continue
     work=$(mktemp -d)
     gzip -dc "$initrd" 2>/dev/null | ( cd "$work" && cpio -idm --quiet 2>/dev/null ) || { rm -rf "$work"; continue; }
 
-    did_preseed=no; did_brand=no; did_palette=no; did_ask=no; did_words=no
+    did_preseed=no; did_brand=no; did_palette=no; did_ask=no; did_words=no; did_hook=no
 
     # 1) preseed at the initrd root — auto-loaded by d-i, no boot argument.
     if [ -n "$PRESEED" ] && [ -f "$PRESEED" ]; then
@@ -144,6 +145,21 @@ for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null)
     if [ -n "$ASK_TOOLS" ] && [ -f "$ASK_TOOLS" ]; then
         cp -f "$ASK_TOOLS" "$work/sysible-ask-tools" && chmod 0755 "$work/sysible-ask-tools"
         did_ask=yes
+    fi
+    # 1b-ii) and WHEN it runs. The asker used to be fired by preseed/early_command,
+    #        which is S33 of the STARTUP chain -- before S60frontend picks a
+    #        frontend and before S62Xorg starts X for it. cdebconf therefore fell
+    #        back to its compiled-in default (/etc/cdebconf.conf, driver "newt")
+    #        and drew the question in stock-blue newt on every boot entry, BIOS and
+    #        UEFI alike. Dropping this file into /lib/debian-installer.d/ runs it at
+    #        S66 of the MAIN chain instead: after the frontend exists and after X is
+    #        up for it, before S70menu. gtk in the graphical installer, newt only on
+    #        a real text/serial install.
+    if [ -n "$ASK_HOOK" ] && [ -f "$ASK_HOOK" ]; then
+        mkdir -p "$work/lib/debian-installer.d" \
+            && cp -f "$ASK_HOOK" "$work/lib/debian-installer.d/S66sysible-ask" \
+            && chmod 0755 "$work/lib/debian-installer.d/S66sysible-ask" \
+            && { did_hook=yes; hooked=$((hooked + 1)); }
     fi
     if [ -n "$ASK_TEMPLATES" ] && [ -f "$ASK_TEMPLATES" ]; then
         cp -f "$ASK_TEMPLATES" "$work/sysible-tools.templates" \
@@ -212,12 +228,15 @@ for initrd in $(find . -type f -path '*install*' -name 'initrd*.gz' 2>/dev/null)
     ( cd "$work" && find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 ) > "$initrd.new" \
         && mv -f "$initrd.new" "$initrd"
     rm -rf "$work"
-    echo "sysible-installer: patched $initrd (preseed=$did_preseed ask-tools=$did_ask branding=$did_brand palette=$did_palette words=$did_words)"
+    echo "sysible-installer: patched $initrd (preseed=$did_preseed ask-tools=$did_ask ask-hook=$did_hook branding=$did_brand palette=$did_palette words=$did_words)"
     patched=$((patched + 1))
 done
-echo "sysible-installer: $patched installer initrd(s): $preseeded preseeded, $branded branded, $paletted palette(s), $worded reworded."
+echo "sysible-installer: $patched installer initrd(s): $preseeded preseeded, $branded branded, $paletted palette(s), $worded reworded, $hooked ask-hook(s)."
 [ "$paletted" = 0 ] && echo "sysible-installer: WARNING — no initrd got the text palette; the installer will look like stock Debian." >&2
 [ "$preseeded" = 0 ] && echo "sysible-installer: WARNING — NO initrd received the preseed; the installed system may have no bootloader." >&2
+# An initrd with the asker but no S66 hook asks NOTHING: early_command no longer
+# calls it, and nothing else does. That is silent, so say it loudly here.
+[ "$hooked" = 0 ] && echo "sysible-installer: WARNING — no initrd got S66sysible-ask; the optional-software question will NOT be asked." >&2
 
 # 3) Make install/gtk/* real wherever the menu may point at it.
 for d in $(find . -maxdepth 3 -type d -name 'install*' 2>/dev/null); do

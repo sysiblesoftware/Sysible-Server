@@ -38,6 +38,7 @@ HOOK = ROOT / "live-build/config/hooks/normal/9400-sysible-installer-branding.ho
 BUILD = ROOT / "live-build/build.sh"
 PRESEED = ROOT / "live-build/config/includes.binary/preseed.cfg"
 ASK = ROOT / "live-build/config/includes.binary/sysible-ask-tools"
+ASK_HOOK = ROOT / "live-build/config/includes.binary/sysible-ask-hook"
 TEMPLATES = ROOT / "live-build/config/includes.binary/sysible-tools.templates"
 
 
@@ -103,18 +104,56 @@ def test_the_hook_puts_the_question_script_in_the_initrd(tmp_path):
     )
 
 
-# ---- 3. the preseed must look there first ---------------------------------
-def test_the_early_command_tries_the_initrd_root_first():
+# ---- 3. the ask must NOT run from early_command any more ------------------
+def test_early_command_no_longer_asks():
+    """preseed/early_command is S33 of d-i's STARTUP chain. The frontend is not
+    chosen until S60 of the NEXT chain and X is not started for it until S62, so
+    at S33 the only frontend that exists is cdebconf's compiled-in default --
+    /etc/cdebconf.conf, `driver "newt"`. A question asked there is drawn in
+    stock-blue newt EVERY time, on every boot entry, BIOS or UEFI, whatever
+    vga= or gfxpayload say. Confirmed by booting the released v1.0.10 ISO.
+
+    So early_command must not be where this is asked. If it comes back here,
+    the question silently stops being part of the graphical install again."""
     line = re.search(r"^d-i preseed/early_command string (.+)$", _code(PRESEED), re.M)
-    assert line, "the preseed no longer runs anything at early_command"
-    cmd = line.group(1)
-    assert "/sysible-ask-tools" in cmd, "early_command does not reference the script at all"
-    first = cmd.index("/sysible-ask-tools")
-    cdrom = cmd.find("/cdrom/sysible-ask-tools")
-    assert cdrom == -1 or first < cdrom, (
-        f"early_command reaches for /cdrom before the initrd root. Nothing is "
-        f"mounted at /cdrom when this fires, so the prompt is skipped silently:\n  {cmd}"
+    cmd = line.group(1) if line else ""
+    assert "sysible-ask-tools" not in cmd, (
+        "the optional-software question is being asked from preseed/early_command "
+        "again. That runs before any frontend exists, so it can only ever be drawn "
+        "in newt. It belongs in /lib/debian-installer.d/S66sysible-ask.\n  " + cmd
     )
+
+
+def test_the_ask_runs_after_the_frontend_and_after_x():
+    """/sbin/debian-installer sources /lib/debian-installer.d/S[0-9][0-9]* in
+    order. S60frontend chooses the frontend; S62Xorg starts X for gtk; S70menu
+    opens the main menu. Ours has to land strictly between X starting and the
+    menu, or it is drawn by a frontend that is not up yet -- or not at all."""
+    import re as _re
+    m = _re.search(r'/lib/debian-installer\.d/(S(\d\d)[A-Za-z0-9_-]+)', _code(HOOK))
+    assert m, "hook 9400 no longer installs anything into /lib/debian-installer.d/"
+    name, num = m.group(1), int(m.group(2))
+    assert 62 < num < 70, (
+        f"{name} runs at S{num:02d}. S60frontend picks the frontend and S62Xorg "
+        f"starts X for it; S70menu opens the main menu. Outside (62, 70) the "
+        f"question is either drawn before its frontend exists or after the menu."
+    )
+
+
+def test_the_ask_hook_cannot_fail_an_install():
+    """/sbin/debian-installer runs `set -e` and SOURCES each script. The asker
+    ends in `exit 0`, so sourcing it would exit the installer itself, and any
+    non-zero would abort the install outright. It must be RUN as a subprocess,
+    with the failure swallowed."""
+    code = _code(ASK_HOOK)
+    assert re.search(r'\bsh\s+"\$_?f"\s*\|\|\s*true', code), (
+        "the hook does not run the asker as `sh ... || true`; a debconf hiccup "
+        "would abort the install")
+    assert not re.search(r'^\s*\.\s+["\$/]', code, re.M), (
+        "the hook SOURCES the asker; its `exit 0` would exit the installer")
+    assert code.strip().splitlines()[-1].strip() == "true", (
+        "the hook does not end in `true`, so its last command's status leaks "
+        "into the `set -e` caller")
 
 
 # ---- 4. the script must look there first too ------------------------------

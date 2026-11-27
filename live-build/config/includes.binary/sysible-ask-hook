@@ -1,0 +1,22 @@
+# Sysible: ask which optional software to install, INSIDE the graphical
+# installer. This chain is sourced by /sbin/debian-installer AFTER S60frontend
+# has chosen the frontend and S62Xorg has started X for it, so the question is
+# drawn by whatever frontend the install is actually using -- gtk when the
+# graphical installer is running, newt only on a text/serial install.
+#
+# It used to run from preseed/early_command, which is S33 of the STARTUP chain:
+# ~30 steps and one whole phase before any frontend exists. cdebconf's built-in
+# default (/etc/cdebconf.conf -> driver "newt") drew it every single time, which
+# is why it appeared as a stock-blue box right after the boot menu no matter
+# which entry was picked.
+#
+# RUN, never source: this file is sourced under `set -e`, and the asker ends in
+# `exit 0`, which would exit the installer itself. `|| true` plus the trailing
+# `true` make an optional question incapable of failing an install.
+for _f in /sysible-ask-tools /cdrom/sysible-ask-tools /hd-media/sysible-ask-tools; do
+	if [ -f "$_f" ]; then
+		sh "$_f" || true
+		break
+	fi
+done
+true

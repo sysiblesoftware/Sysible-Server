@@ -249,6 +249,12 @@ export SYSIBLE_PRESEED="$PWD/config/includes.binary/preseed.cfg"
 # install.
 export SYSIBLE_ASK_TOOLS="$PWD/config/includes.binary/sysible-ask-tools"
 export SYSIBLE_ASK_TEMPLATES="$PWD/config/includes.binary/sysible-tools.templates"
+# ...and the chain entry that RUNS the asker. It goes in at
+# /lib/debian-installer.d/S66sysible-ask, which is sourced AFTER S60frontend
+# has chosen the frontend and S62Xorg has started X for it -- the whole point
+# of the move off preseed/early_command (S33 of the startup chain, before any
+# frontend exists, which is why the question was always drawn in newt).
+export SYSIBLE_ASK_HOOK="$PWD/config/includes.binary/sysible-ask-hook"
 # Stage the build, so the chroot can be given a CA store in between debootstrap
 # and the first apt update. `lb build` is precisely `lb bootstrap; lb chroot; lb
 # binary; lb source`, and each stage guards itself with a stamp under .build/ --

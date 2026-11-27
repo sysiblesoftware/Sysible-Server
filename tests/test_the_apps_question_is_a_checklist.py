@@ -54,6 +54,25 @@ def _field(name, field):
     return None
 
 
+def _ids(name="sysible/apps"):
+    """The ids the rest of the system uses.
+
+    They live in Choices-C now. Choices carries what the OPERATOR reads -- full
+    product names ("Sysible Linux Operations Platform (SLOP)") -- and db_get
+    returns the C value, so the two can differ freely. Before Choices-C the id
+    was the first word of the label, which only worked while every label began
+    with its own id; "Sysible Linux Operations Platform (SLOP)" does not, and
+    that parse silently produced "Sysible"."""
+    c = _field(name, "Choices-C")
+    if c is not None:
+        return [x.strip() for x in c.split(",") if x.strip()]
+    return [x.strip().split()[0] for x in (_field(name, "Choices") or "").split(",") if x.strip()]
+
+
+def _labels(name="sysible/apps"):
+    return [x.strip() for x in (_field(name, "Choices") or "").split(",") if x.strip()]
+
+
 # --- the question --------------------------------------------------------
 
 def test_the_apps_question_is_a_checklist():
@@ -73,10 +92,9 @@ def test_all_and_none_are_gone():
     """A checklist expresses both already: tick everything, or tick nothing.
     Leaving them in gives two ways to say the same thing, and "all" next to
     real checkboxes is exactly the all-or-nothing framing being removed."""
-    choices = _field("sysible/apps", "Choices")
-    ids = [c.strip().split()[0] for c in choices.split(",")]
-    assert "all" not in ids, choices
-    assert "none" not in ids, choices
+    ids = _ids()
+    assert "all" not in ids, ids
+    assert "none" not in ids, ids
     assert {"slop", "controller", "slep", "connect"} == set(ids), ids
 
 
@@ -88,9 +106,12 @@ def test_no_choice_hides_a_comma():
 
 def test_the_default_is_one_of_the_choices():
     """A Default that matches nothing pre-selects nothing, silently."""
-    choices = [c.strip() for c in _field("sysible/apps", "Choices").split(",")]
+    ids = _ids()
     for d in (x.strip() for x in (_field("sysible/apps", "Default") or "").split(",") if x.strip()):
-        assert d in choices, f"Default {d!r} is not among {choices}"
+        assert d in ids, (
+            f"Default {d!r} is not among {ids}. With Choices-C the Default must be "
+            f"a C VALUE, not a label -- a Default that matches no id pre-selects "
+            f"nothing, silently.")
 
 
 def test_the_description_does_not_rely_on_alignment():
@@ -139,21 +160,26 @@ def ask(tmp_path):
     ("controller, slep", "controller slep"),
     ("controller, slep, connect", "controller slep connect"),
     ("connect", "connect"),
-    ("slop (one gateway in front of all three)", "slop"),
-    ("controller (fleet console), slep (infra automation)", "controller slep"),
-    ("connect (browser terminal)", "connect"),
+    ("slop", "slop"),
     ("", ""),
+    # Leading/trailing space is normal in a multiselect answer.
+    ("  controller ,  connect ", "controller connect"),
+    # A LABEL leaking through -- Choices-C not honoured, or someone edits the
+    # template and forgets it -- must be DROPPED, not forwarded. Forwarding it
+    # hands install-sysible "Sysible" and it dies on an unknown product in a log
+    # nobody reads. Empty-and-logged is the safe failure.
+    ("Sysible Linux Operations Platform (SLOP) - one front door for all three", ""),
+    ("slop, Sysible Connect - terminal in the browser", "slop"),
 ])
 def test_a_multiselect_answer_becomes_a_product_list(ask, answer, expected):
-    """The two the report is about are the first two: one or two apps on their
-    own. Each choice's FIRST WORD is the id install-sysible takes."""
+    """db_get returns the Choices-C value, so what arrives here is the bare id."""
     assert ask(answer) == expected
 
 
 def test_slop_supersedes_the_individual_apps(ask):
     """slop IS all three behind the gateway. Installing it alongside them would
     stand a second standalone copy of each next to the ones it fronts."""
-    assert ask("slop (one gateway in front of all three), controller (fleet console)") == "slop"
+    assert ask("slop, controller") == "slop"
 
 
 # --- the first boot, running the real script ------------------------------
@@ -231,7 +257,7 @@ def test_every_choice_names_a_product_install_sysible_accepts():
             accepted = set(m.group(1).split())
     if accepted is None:
         pytest.skip("could not read PRODUCTS_ALL from install-sysible")
-    ids = {c.strip().split()[0] for c in _field("sysible/apps", "Choices").split(",")}
+    ids = set(_ids())
     assert ids <= accepted, (
         f"the installer offers products install-sysible rejects: "
         f"{sorted(ids - accepted)}; it accepts {sorted(accepted)}")
@@ -247,7 +273,7 @@ def test_the_installer_offers_what_the_post_install_menu_offers():
         pytest.skip("install-sysible not in this repo")
     text = cli.read_text()
     assert "--checklist" in text, "the post-install menu is no longer a checklist"
-    ids = {c.strip().split()[0] for c in _field("sysible/apps", "Choices").split(",")}
+    ids = set(_ids())
     assert ids == {"controller", "slep", "connect", "slop"}, ids
 
 
@@ -289,3 +315,36 @@ def test_the_installer_pages_are_plain_ascii():
     raw = TEMPLATES.read_bytes()
     bad = [(i, b) for i, b in enumerate(raw) if b > 0x7E or (b < 0x20 and b != 0x0A)]
     assert not bad, f"non-ASCII in a page the installer prints: {bad[:5]}"
+
+
+# --- the labels the operator actually reads -------------------------------
+
+def test_the_listing_names_the_products_in_full():
+    """Reported: the list said "slop" and "slep". Those are internal ids, not
+    product names -- nobody outside this repo knows what "slep" is. Choices-C
+    keeps the ids for the machine, so the visible list can say what the
+    software IS without changing a single thing downstream."""
+    labels = " | ".join(_labels())
+    for want in ("Sysible Linux Operations Platform (SLOP)",
+                 "Sysible Linux Engineering Platform (SLEP)",
+                 "Sysible Controller",
+                 "Sysible Connect"):
+        assert want in labels, f"the install listing never says {want!r}:\n  {labels}"
+
+
+def test_every_id_has_exactly_one_label():
+    """Choices-C and Choices are matched up by POSITION. One more entry in
+    either, or a stray comma inside a label, silently shifts every label onto
+    the wrong id -- the operator ticks the Controller and gets Connect."""
+    ids, labels = _ids(), _labels()
+    assert len(ids) == len(labels), (
+        f"{len(ids)} ids but {len(labels)} labels; they are paired by position, "
+        f"so every one after the mismatch is attached to the wrong product.\n"
+        f"  ids   : {ids}\n  labels: {labels}")
+
+
+def test_no_label_hides_a_comma():
+    """Commas separate entries. One inside a label splits it in two, which is
+    how the counts above drift apart in the first place."""
+    for lab in _labels():
+        assert "(" not in lab or ")" in lab, f"a comma split this label: {lab!r}"

@@ -2,9 +2,17 @@
 # Sysible Server — ask which optional/licensed tools to add, DURING the
 # Debian install and BEFORE the base system is laid down.
 #
-# Run from preseed/early_command (which executes right after the preseed is read,
-# before partitioning and base-installer). We show a debconf multiselect; the
-# answer is stashed in the installer's ramdisk at /tmp/sysible-tools.wanted.
+# Run from /lib/debian-installer.d/S66sysible-ask (source: sysible-ask-hook),
+# which d-i sources AFTER S60frontend has chosen the frontend and S62Xorg has
+# started X for it, and before S70menu opens the main menu. So the multiselect
+# below is drawn by the frontend the install is really using: gtk inside the
+# graphical installer, newt only on a genuine text or serial install.
+#
+# It used to run from preseed/early_command -- S33 of the STARTUP chain, before
+# any frontend exists -- so cdebconf fell back to /etc/cdebconf.conf's built-in
+# `driver "newt"` and drew it in stock-blue newt every time, whichever entry was
+# booted. The answer is stashed in the installer's ramdisk at
+# /tmp/sysible-tools.wanted.
 # preseed/late_command then copies it into the target as /etc/sysible/tools.wanted,
 # and the sysible-tools-firstboot.service oneshot installs the picks on first boot.
 #
@@ -12,9 +20,8 @@
 # install: worst case nothing is preselected and the operator uses `sysible-tools`
 # after boot, exactly as before.
 #
-# NO `set -e` here — on purpose. This runs from d-i's preseed/early_command, where
-# ANY non-zero exit aborts the install with a "Failed to run preseeded command"
-# dialog. debconf's confmodule and the db_* commands routinely return non-zero as
+# NO `set -e` here — on purpose. Its caller, /sbin/debian-installer, runs under
+# `set -e`, so any non-zero exit would abort the install. debconf's confmodule and the db_* commands routinely return non-zero as
 # NORMAL control flow (a skipped question, an unset value, a template that didn't
 # load), so `set -e` here turned a harmless debconf hiccup into a failed install.
 # We run best-effort and force `exit 0` at the very end instead.
@@ -126,10 +133,21 @@ if [ "$_apps_shown" != yes ]; then
   _log "apps: NOT asked, so nothing is recorded -- the default is not an answer"
   APPS=
 fi
-# A multiselect answers "a, b, c". Each choice's FIRST WORD is the id
-# install-sysible takes, so a choice can carry explanatory text -- "slop (all
-# apps behind one gateway)" -- without the parsing changing. sed, not awk: this
-# runs in the installer's busybox environment.
+# A multiselect answers "a, b, c". The template declares Choices-C, so what comes
+# back here is the ID (slop/controller/slep/connect), never the label the operator
+# read -- that is the whole point of Choices-C, and it is what lets the visible
+# list say "Sysible Linux Operations Platform (SLOP)" while this stays "slop".
+#
+# It used to take each choice's FIRST WORD, which worked only while every label
+# happened to begin with its own id. The moment a label began with anything else
+# -- "Sysible Linux Operations Platform (SLOP)" does -- that produced "Sysible",
+# and install-sysible would have been handed an unknown product with nothing
+# anywhere saying why. So: split on commas, trim, and then ACCEPT ONLY KNOWN IDS.
+# An unrecognised token is dropped and logged rather than passed on, so a future
+# template edit that breaks this fails visibly and empty instead of silently
+# installing the wrong thing.
+#
+# sed/case, not awk: this runs in the installer's busybox environment.
 #
 # The old line was `tr -d ' '` with no `tr ',' ' '` (which the tools question
 # above DOES have), so the moment this became a multiselect it would have
@@ -137,8 +155,16 @@ fi
 # unknown product. The question was single-choice, so it never showed.
 APPS=$(printf '%s' "${APPS:-}" \
        | tr ',' '\n' \
-       | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]].*$//' -e '/^$/d' \
+       | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' \
        | tr '\n' ' ')
+_known=
+for _a in $APPS; do
+  case "$_a" in
+    slop|controller|slep|connect) _known="$_known $_a" ;;
+    *) _log "apps: DROPPED unrecognised choice [$_a] -- expected slop/controller/slep/connect (Choices-C not honoured?)" ;;
+  esac
+done
+APPS="$_known"
 # "slop" IS all three behind the gateway, so it supersedes the rest: installing
 # it alongside controller/slep/connect would stand a second standalone copy of
 # each next to the ones the gateway fronts.
