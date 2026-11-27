@@ -412,26 +412,38 @@ jobs:
             Includes the Sysible Controller CE installer.
 
             ### New in ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
-            * **Choosing software during the install now installs it.** Ticking `slop`
-              — or any one app — recorded the choice and then, on a host that could not
-              reach GitHub and Docker Hub, did nothing with it: the first-boot installer
-              checked for a network before it looked at the disk, gave up after three
-              tries and left a note at the login prompt. The container images and the
-              platform's source were already on the machine. That check now runs only
-              when something genuinely needs downloading, so what you tick during the
-              install is running when you first log in — no command to type, and no
-              network required.
-            * **Nothing is fetched that the image already ships.** The apps are taken
-              from the platform checkout in the image, which carries all three of them,
-              rather than cloned from GitHub a second time. A host that did clone them
-              keeps using its own checkout, so `sysiblectl <product> update` goes on
-              tracking the repository you cloned.
-            * **A host that really is just offline still gets the old, clear message.**
-              The network check was made conditional, not removed. Source without the
-              images still has to reach a registry, so that case keeps the check rather
-              than failing later inside a build.
+            * **The installer asks again — in the graphical installer.** The question
+              offering the Sysible software and the optional licensed tools had stopped
+              appearing at all, and the machine then set up the default nobody had
+              chosen. The boot menu's obvious entry also booted the text installer, so
+              when the question did appear it came up as a grey box straight after GRUB.
+              The plain, hotkeyed entry now boots the graphical installer and the
+              question appears inside it, branded. A question that is not shown no
+              longer records an answer: being asked and taking the default is a
+              decision, never being asked is not.
+            * **The installer calls itself Sysible.** Its menu, step titles and finish
+              screen came from the base installer and said so throughout.
+            * **The platform is running before the login prompt.** Setup used to start
+              after login — containers appearing around you, and `sysiblectl slop start`
+              answering "not installed" because it was still working. It now holds the
+              prompt until the platform is up, bounded so a stalled setup can never lock
+              you out of your own machine. The optional licensed tools no longer sit in
+              front of the prompt; they are downloaded from the vendors and have nothing
+              to do with getting the platform running.
+            * **The Administration page sees its own apps.** It reported the Controller,
+              Engineering Platform and Connect as "No container ... not installed on this
+              host" while all three were serving requests, because they ran as three
+              separate compose projects. The platform is one project now — nine
+              services — which is the layout its updater is written for.
+            * **`sysiblectl` works the moment you log in**, rather than saying the
+              platform is not installed while it is being installed.
+            * **8.8.8.8 is the first nameserver**, set where the DHCP client generates
+              resolv.conf so it survives every lease renewal. The servers your own
+              network hands out stay listed behind it.
+            * **The login banner prints colour, not the codes for it.** The first screen
+              after login was showing literal `[1m[32m` escape codes as text.
 
-            **Earlier, in 1.0.7 — the airgapped install.**
+            **Earlier, in 1.0.9 — the install that needed no network.**
             * **The platform installs on an airgapped network.** The ISO now
               carries every Sysible container image, built beforehand, plus the
               platform's source. A first boot loads them and brings the whole
