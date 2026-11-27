@@ -1,4 +1,5 @@
 #!/bin/sh
+# sync-sha256: 0ef35a6d636cba0205f21ced3185c6a3525e86f0956078948df5433008d2d8c4
 # sysiblectl — the name a Sysible host answers to BEFORE the platform exists.
 #
 # WHY THIS FILE EXISTS. The unified `sysiblectl` lives in the Controller
