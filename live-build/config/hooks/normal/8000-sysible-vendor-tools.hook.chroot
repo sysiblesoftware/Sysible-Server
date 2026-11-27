@@ -163,15 +163,26 @@ k9s_sum=$($CURL "https://github.com/derailed/k9s/releases/latest/download/checks
 tar xz -C /usr/local/bin -f /tmp/k9s.tgz k9s \
     || { echo "ERROR: could not extract k9s from its tarball." >&2; exit 1; }
 echo "k9s ok (sha256 verified)"
-( $CURL "https://github.com/eza-community/eza/releases/latest/download/eza_${GNU_ARCH}-unknown-linux-gnu.tar.gz" \
-    | tar xz -C /usr/local/bin ) 2>/dev/null && echo "eza ok" || echo "eza skipped"
+# REQUIRED. The product pages list eza among the tools the image ships, so an
+# image without it does not match what was advertised -- the same rule k9s is
+# held to above. 2>/dev/null is gone with the best-effort: when this is allowed
+# to fail the build, the reason has to be visible.
+$CURL "https://github.com/eza-community/eza/releases/latest/download/eza_${GNU_ARCH}-unknown-linux-gnu.tar.gz" -o /tmp/eza.tgz \
+    || { echo "ERROR: could not download eza for ${GNU_ARCH}." >&2; exit 1; }
+tar xz -C /usr/local/bin -f /tmp/eza.tgz \
+    || { echo "ERROR: could not extract eza from its tarball." >&2; exit 1; }
+rm -f /tmp/eza.tgz
+echo "eza ok"
 sops_url=$($CURL https://api.github.com/repos/getsops/sops/releases/latest \
     | grep -oE "https://[^\"]*linux\.${ARCH}" | head -1)
-if [ -n "$sops_url" ] && $CURL "$sops_url" -o /usr/local/bin/sops; then
-    chmod +x /usr/local/bin/sops; echo "sops ok"
-else
-    echo "sops skipped"
-fi
+# REQUIRED. server.html calls sops "preinstalled" by name and lists it in the
+# page description; an ISO without it is advertising something it does not have.
+[ -n "$sops_url" ] \
+    || { echo "ERROR: no published sops release for linux.${ARCH}." >&2; exit 1; }
+$CURL "$sops_url" -o /usr/local/bin/sops \
+    || { echo "ERROR: could not download sops from $sops_url." >&2; exit 1; }
+chmod +x /usr/local/bin/sops
+echo "sops ok"
 
 # PowerShell — Microsoft's official .deb from the PowerShell GitHub releases,
 # which ships BOTH amd64 and arm64 (the Debian prod apt feed is amd64-only, so it
@@ -183,13 +194,14 @@ pwsh_ver=$($CURL https://api.github.com/repos/PowerShell/PowerShell/releases/lat
 [ -n "$pwsh_ver" ] || pwsh_ver=v7.4.6
 pwsh_num=${pwsh_ver#v}
 pwsh_url="https://github.com/PowerShell/PowerShell/releases/download/${pwsh_ver}/powershell_${pwsh_num}-1.deb_${ARCH}.deb"
-if $CURL "$pwsh_url" -o /tmp/powershell.deb 2>/dev/null; then
-    apt-get install -y --no-install-recommends /tmp/powershell.deb \
-        && echo "powershell ok ($pwsh_ver $ARCH)" \
-        || echo "WARNING: powershell install failed for $ARCH — skipping"
-    rm -f /tmp/powershell.deb
-else
-    echo "WARNING: powershell download failed ($pwsh_url) — skipping"
-fi
+# REQUIRED. The GitHub release ships both amd64 and arm64 (noted above), so
+# neither architecture has an excuse to skip it. 2>/dev/null is gone for the same
+# reason as eza: a failure that stops the build must say why.
+$CURL "$pwsh_url" -o /tmp/powershell.deb \
+    || { echo "ERROR: could not download powershell from $pwsh_url." >&2; exit 1; }
+apt-get install -y --no-install-recommends /tmp/powershell.deb \
+    || { echo "ERROR: powershell .deb failed to install for $ARCH." >&2; exit 1; }
+rm -f /tmp/powershell.deb
+echo "powershell ok ($pwsh_ver $ARCH)"
 
 echo "== Sysible vendor tools done =="
