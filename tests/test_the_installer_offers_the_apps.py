@@ -19,6 +19,8 @@ import pathlib
 import shutil
 import subprocess
 
+import re
+
 import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -80,8 +82,23 @@ def test_the_first_boot_unit_is_enabled_in_the_image():
     assert "ConditionPathExists=/etc/sysible/apps.wanted" in u
     assert "After=network-online.target" in u, \
         "it would run before the network it needs to clone and pull"
-    assert "TimeoutStartSec=0" in u, \
-        "cloning four repos and building containers will exceed the default timeout"
+    # DELIBERATELY BOUNDED now, and the old rationale no longer holds: nothing
+    # is cloned and nothing is built on the normal path, because the images
+    # ship in the ISO and the apps are built from the platform checkout. What
+    # changed the requirement is that this unit is now ordered
+    # Before=systemd-user-sessions.service so the platform is up at the login
+    # prompt -- and gating logins on an unbounded job means one wedged install
+    # locks the operator out of their own machine with no way back.
+    assert "TimeoutStartSec=0" not in u, (
+        "an unbounded timeout on a unit that gates the login prompt can lock "
+        "the operator out of the machine entirely")
+    m = re.search(r"^TimeoutStartSec=(\d+)$", u, re.M)
+    assert m and 0 < int(m.group(1)) <= 300, (
+        f"expected a bounded timeout of at most 300s, got {m.group(1) if m else 'none'}")
+    assert "Before=systemd-user-sessions.service" in u, (
+        "nothing stops a login happening while the platform is still being set "
+        "up, which is how 'services start after I log in' and 'sysiblectl slop "
+        "start says it is not installed' were both reported")
 
 
 # ---- the first-boot run, EXECUTED -------------------------------------------

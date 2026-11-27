@@ -11,39 +11,52 @@ ConditionPathExists=/etc/sysible/apps.wanted
 # network, so waiting for it is an optimisation, never a precondition.
 Wants=network-online.target
 After=network-online.target docker.service
-# The tools the operator picked (terraform, kubectl, ...) install from vendor apt
-# repos. Ordering after that unit keeps two long apt/network jobs off each
-# other's back on the very first boot rather than racing for dpkg's lock.
-After=sysible-tools-firstboot.service
+# NOT after the tools unit any more. This one gates the login prompt, so
+# anything it waits for gates the prompt too -- and the optional licensed tools
+# download from vendor repos, which can be slow or unreachable and have nothing
+# to do with getting the platform running. The ordering is reversed instead:
+# sysible-tools-firstboot runs After= THIS unit, so the dpkg lock is still never
+# contended and the slow, optional half happens once you are already logged in.
 # The platform images must be in Docker's store BEFORE compose runs, or it
 # goes to a registry for images this machine already carries -- which on an
 # airgapped host means the install fails at the very last step.
 After=sysible-platform-images.service
 Wants=sysible-platform-images.service
 
+# Gate the login prompt on this. systemd-user-sessions.service is what
+# lifts the login block, so ordering before it means nothing can log in
+# until setup has finished -- which is the whole point: the machine is in
+# its final state at the prompt, instead of changing underneath someone
+# who is already using it.
+Before=systemd-user-sessions.service
+
 [Service]
-# NOT oneshot. multi-user.target waits for a oneshot unit to finish, and this
-# one clones nothing but does build and start containers -- minutes. Until the
-# target is reached systemd keeps painting unit status on the console, so an
-# operator who had already logged in watched "Started docker-<hash>.scope" lines
-# scroll over their shell prompt and reasonably asked what was going wrong.
+# BEFORE THE LOGIN PROMPT, not after it.
 #
-# Type=simple marks the unit active as soon as the process starts, so boot
-# completes, systemd stops writing to the console, and the install carries on in
-# the background. The script still reports its own result to the journal, still
-# writes /etc/sysible/apps-failed when it gives up, and still logs in full to
-# /var/log/sysible-apps-firstboot.log.
+# This was Type=oneshot, then briefly Type=simple to stop systemd painting unit
+# status over a shell someone had already logged into. That fixed the noise and
+# missed the point: the complaint was never really about the scrolling, it was
+# that you log in, the platform is not there, `sysiblectl slop start` says it is
+# not installed, and then containers start up around you. Setup belongs before
+# the prompt, so that by the time you can type, the platform is running.
 #
-# RemainAfterExit is meaningless for Type=simple and is gone: re-running is
-# already prevented by ConditionPathExists above, since the script removes
-# apps.wanted once it has succeeded or given up.
-Type=simple
-# The work writes to its own log; nothing from it belongs on the console.
-StandardOutput=journal
-StandardError=journal
+# Ordering before systemd-user-sessions.service is what does that: it is the
+# unit that lifts the login block, so nothing can log in until this finishes.
+# The console output is deliberate now -- a machine that sits for two minutes
+# with no explanation looks hung, so it says what it is doing.
+#
+# BOUNDED, unlike before. Gating logins on an unbounded job means one wedged
+# install locks the operator out of their own machine with no way back. Five
+# minutes is well beyond a normal run -- the images ship in the ISO and are
+# already loaded by this point, so there is nothing to pull and nothing to
+# build. Past that, systemd gives up, the unit fails, the login prompt appears,
+# and the script's own retry/apps-failed path and the login hint take over.
+Type=oneshot
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=150
 ExecStart=/usr/lib/sysible/install-selected-apps
-# Cloning four repos and building containers is not a 90-second job.
-TimeoutStartSec=0
 
 [Install]
 WantedBy=multi-user.target

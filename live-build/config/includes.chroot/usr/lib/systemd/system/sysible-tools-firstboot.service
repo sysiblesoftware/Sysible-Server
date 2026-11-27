@@ -9,13 +9,25 @@ ConditionPathExists=/etc/sysible/tools.wanted
 Wants=network-online.target
 After=network-online.target
 
+# NOT before the login prompt. These are the optional, separately licensed
+# tools (terraform, vault, consul, aws-cli) and they are downloaded from the
+# vendors, so this step is as slow and as fallible as whatever network the
+# machine is on. The platform is what has to be up at the prompt; this is not.
+# It runs AFTER the apps, so two apt/dpkg jobs still never race for the lock.
+After=sysible-apps-firstboot.service
+
 [Service]
 # Same reason as sysible-apps-firstboot: installing vendor packages is a
 # minutes-long job and must not hold multi-user.target open, which is what
 # keeps systemd printing unit status over an operator's shell.
-Type=simple
-StandardOutput=journal
-StandardError=journal
+# Same as sysible-apps-firstboot: finish before anyone can log in, so the
+# machine is in its final state at the prompt rather than changing underneath
+# someone who is already using it.
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=300
+StandardOutput=journal+console
+StandardError=journal+console
 ExecStart=/usr/lib/sysible/install-selected-tools
 
 [Install]

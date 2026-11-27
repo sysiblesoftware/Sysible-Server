@@ -11,8 +11,14 @@ ConditionPathExists=!/var/lib/sysible/platform-images-loaded
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Loading several hundred megabytes of layers is not quick on slow storage.
-TimeoutStartSec=0
+# BOUNDED, because sysible-apps-firstboot is ordered After= this unit and that
+# unit gates the login prompt. An unbounded load here would therefore hold the
+# prompt open for ever, which is exactly the lockout the cap on that unit
+# exists to prevent -- a cap is worth nothing if the thing in front of it has
+# none. Loading several hundred megabytes of layers is not quick on slow
+# storage, so this is generous; past it, systemd gives up, the unit fails, and
+# the apps unit's own checks report the images as missing rather than hanging.
+TimeoutStartSec=150
 ExecStart=/usr/lib/sysible/load-platform-images
 
 [Install]
