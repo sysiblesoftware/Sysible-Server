@@ -136,8 +136,15 @@ tar xz -C /usr/local/bin -f /tmp/tofu.tgz tofu
 chmod 0755 /usr/local/bin/tofu
 tofu version || true
 
-# GitHub-release binaries (no apt repo): k9s is REQUIRED (see below); eza and
-# sops stay best-effort — a hiccup fetching those must not fail the whole ISO.
+# GitHub-release binaries (no apt repo). All three are REQUIRED: the product
+# pages name k9s, eza and sops among the tools the image already has, so an
+# image without one does not match what was advertised.
+#
+# This comment used to describe eza and sops as optional, and say a hiccup
+# fetching them must not fail the ISO. That stopped being true when they were
+# made required, and a stale comment describing the opposite of the code is
+# worse than none: it is what somebody reads before deciding a red build is
+# harmless.
 echo "== GitHub-release binaries =="
 # k9s: REQUIRED, and never installed unverified.
 #
@@ -177,6 +184,21 @@ sops_url=$($CURL https://api.github.com/repos/getsops/sops/releases/latest \
     | grep -oE "https://[^\"]*linux\.${ARCH}" | head -1)
 # REQUIRED. server.html calls sops "preinstalled" by name and lists it in the
 # page description; an ISO without it is advertising something it does not have.
+# PINNED FALLBACK, because the API is the fragile part, not sops.
+# api.github.com allows 60 unauthenticated requests an hour PER IP, and GitHub
+# Actions runners share addresses, so a 403 here is routine rather than
+# exceptional. helm, opentofu and powershell in this same file each pin a
+# known-good version for exactly that reason; sops was the only one of the four
+# that did not, so a rate-limit answered with "no published sops release" and
+# killed a nine-minute build (Workstation run #86). The same 403 appears in that
+# log against helm and opentofu, which carried on, because they had this.
+#
+# v3.13.3 is upstream's current release and the asset name is the one in their
+# own install instructions. The arm64 name follows the same pattern but is NOT
+# confirmed against the published asset list; if it is wrong the download fails,
+# which is exactly what happens today, so this cannot make anything worse. The
+# API path above stays first and keeps giving the real latest.
+[ -n "$sops_url" ] || sops_url="https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.${ARCH}"
 [ -n "$sops_url" ] \
     || { echo "ERROR: no published sops release for linux.${ARCH}." >&2; exit 1; }
 $CURL "$sops_url" -o /usr/local/bin/sops \

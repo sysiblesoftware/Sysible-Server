@@ -183,14 +183,46 @@ def test_no_failure_path_is_swallowed(name):
     still carried an exit. A test that accepts one guarded line as proof for an
     unguarded one is not a test, so this walks every line that touches the tool
     and checks that line's own fallback."""
+    # Logical lines, not physical ones. A `\` continuation split the guard in
+    # two — the half naming the tool had no `||`, and the half with the `||` did
+    # not name the tool — so a failure path written across two lines was invisible
+    # to this scan. That is the same multi-line blind spot that had to be fixed in
+    # the updater's _run census on the same day; a scanner that reads physical
+    # lines cannot see shell, which is written in logical ones.
+    _joined, _buf = [], ""
+    for _l in _code(VENDOR).splitlines():
+        _buf += _l.rstrip()
+        if _buf.endswith("\\"):
+            _buf = _buf[:-1] + " "
+            continue
+        _joined.append(_buf)
+        _buf = ""
+    if _buf:
+        _joined.append(_buf)
+
     bad = []
-    for line in _code(VENDOR).splitlines():
+    for line in _joined:
         if not any(t in line for t in TOUCHES[name]):
             continue
         if "||" not in line:
             continue
         tail = line.split("||", 1)[1]
         if "exit 1" in tail or "exit 1" in line:
+            continue
+        # A `||` that assigns a DEFAULT is not a swallowed failure. It is the
+        # shape helm, opentofu and powershell already use for the same reason:
+        #     [ -n "$helm_ver" ] || helm_ver=v3.16.3
+        # api.github.com is rate-limited per IP and Actions runners share
+        # addresses, so a 403 there is routine — and sops was the only one of
+        # the four with no answer for it, which killed Workstation run #86 nine
+        # minutes in. Nothing is being allowed to fail here: the line below
+        # still hard-exits on an empty URL, and the download below that still
+        # hard-exits on a failed fetch.
+        #
+        # Deliberately narrow: ONLY a bare assignment. `|| true`, `|| echo ...`,
+        # `|| cp ...` and anything else still fail this test, because those are
+        # how a real failure gets swallowed.
+        if re.fullmatch(r"\s*[A-Za-z_][A-Za-z_0-9]*=\S*\s*", tail):
             continue
         bad.append(line.strip())
     assert not bad, (
