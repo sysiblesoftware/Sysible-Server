@@ -81,6 +81,62 @@ Depends: ${misc:Depends},
 # Recommends, which apt installs by default and --no-install-recommends silently
 # drops -- and dropping it leaves the gateway unable to mint its own secrets.
  openssl,
+# --- data & config wrangling --------------------------------------------
+# yq is the YAML half of jq, and it was simply absent. Everything an operator
+# edits on this image is YAML -- compose files, Kubernetes manifests, Ansible
+# playbooks, CI workflows -- so the image shipped the JSON tool and not the
+# YAML one. yamllint is what rejects a broken manifest before it is applied;
+# jo builds JSON from the shell the way jq reads it.
+ yq, yamllint, jo,
+# --- shell engineering ---------------------------------------------------
+# shellcheck is already part of this project's OWN workflow: scripts in this
+# repository carry `# shellcheck disable=` directives, so the tool that reads
+# them belongs on the image that ships them. shfmt formats what it checks.
+ shellcheck, shfmt, pre-commit,
+# moreutils (sponge/ts/chronic/ifne) and GNU parallel are what server-side
+# pipelines reach for; entr re-runs on change, hyperfine times properly,
+# expect drives a prompt that has no batch mode, and at is cron's one-shot
+# counterpart. pv and dos2unix are the everyday two.
+ moreutils, parallel, entr, hyperfine, expect, at, pv, dos2unix,
+# --- git -----------------------------------------------------------------
+# git is a hard dep above; git-lfs is what makes a repository with binary
+# assets clone at all, and its absence looks like a corrupt checkout.
+ git-lfs, tig,
+# --- network debugging ---------------------------------------------------
+# socat is what port-forwarding, socket relaying and "is that unix socket
+# answering" actually use. netcat-openbsd above does not cover any of it.
+ socat, whois, httpie,
+# tshark carries the dissectors tcpdump's output does not, and conntrack is
+# how Docker's and nftables' NAT is inspected -- the first thing to look at
+# when a published container port does not answer.
+ tshark, conntrack, fping, ipcalc, nethogs, ngrep, bmon,
+# --- VPN / reaching a management network ---------------------------------
+# An image sold for managing fleets shipped no VPN tooling whatsoever.
+ wireguard-tools, openvpn,
+# --- hardware inventory --------------------------------------------------
+# The Sysible Controller reports on host hardware, and smartmontools plus
+# lm-sensors were the only things on the image that could see any of it.
+# dmidecode/lshw/lspci/lsusb are how a host answers "what am I", nvme-cli and
+# hdparm how its disks do, and ipmitool how a server is reached out-of-band
+# when it is not booted.
+ dmidecode, lshw, pciutils, usbutils, nvme-cli, hdparm, ipmitool,
+# --- performance & burn-in -----------------------------------------------
+ fio, stress-ng, sysbench, numactl, bpftrace, linux-perf, gdb,
+# --- backup & object storage ---------------------------------------------
+# rclone talks to every object store an engineer meets; restic is a real
+# deduplicating backup tool, which sysiblectl's own tarballs are not.
+ rclone, restic, s3cmd,
+# --- database clients ----------------------------------------------------
+ pgcli, mycli,
+# --- the Python libraries Ansible's cloud modules import -----------------
+# ansible is a hard dep above, but its AWS and Kubernetes modules are not
+# self-contained: they import boto3 and the kubernetes client AT RUNTIME and
+# fail with "Failed to import the required Python library" without them.
+# Shipping ansible without these ships the half of it that cannot reach a
+# cloud -- and the failure surfaces on the first play, not at install time.
+ python3-boto3, python3-kubernetes,
+# --- shell & everyday quality of life ------------------------------------
+ zsh, direnv, zoxide, tealdeer,
 Recommends:
 # Heavier pieces — installed by default, removable with --no-install-recommends.
 # This is the Sysible Server toolset MINUS the GUI: no GNOME/Calamares, no
@@ -94,20 +150,43 @@ Recommends:
  postgresql-client, default-mysql-client, sqlite3, redis-tools,
 # security
  gnupg, fail2ban, auditd, apparmor, lynis,
-# monitoring / CLI (contrib/backports on some suites — Recommends keeps them soft)
+# monitoring / CLI. All three are in bookworm MAIN on amd64 and arm64
+# (verified against the package indices), so the old note about
+# contrib/backports did not apply to the suite this image is built from --
+# and 'Recommends keeps them soft' would not have saved the build either,
+# for the reason spelled out at eza below.
  btop, atop, iftop,
-# eza is Debian 13+; soft-depend so a bookworm build doesn't fail
+# eza is not in bookworm at all (verified against the bookworm package
+# indices for amd64 and arm64). The field it sits in is NOT what keeps the
+# build alive: build.sh expands Depends, Recommends AND Suggests into one
+# live-build package list, which apt installs as a hard set. Being in
+# build.sh's VEND list is the only reason eza never reaches that list, and
+# the vendor hook installs its binary instead. Treat 'Recommends' here as
+# documentation of intent for an apt-installed machine, not as build safety.
  eza,
 # headless virtualization host (the GUI virt-manager/virt-viewer are dropped)
  libvirt-daemon-system, qemu-system, qemu-utils,
+# libvirt-clients carries virsh. It used to arrive only as a Recommends of
+# libvirt-daemon-system (or, on the Workstation, of virt-manager), so the one
+# command that drives a hypervisor was two levels of "probably" deep while
+# SLEP's hypervisor feature assumes it. Named explicitly instead.
+ libvirt-clients,
 # These come from third-party repos wired up by sysible-release; Recommends so a
 # missing upstream repo never blocks the whole install:
  kubectl, helm, k9s,
  opentofu,
  awscli, sops, age,
  gh,
-Suggests:
+# azure-cli and google-cloud-cli were in Suggests, which apt does NOT install.
+# That made the metadata disagree with the build in two directions: the vendor
+# hook installs both unconditionally, so every ISO HAS them, while a machine
+# that installed sysible-server from repo.sysible.com got neither -- two
+# different toolsets from one product name. Recommends is the field that
+# matches what actually happens, and it is safe here for the same reason the
+# rest of this list is: both are in build.sh's VEND set, so neither reaches
+# the generated toolkit list and the ISO build never has to resolve them.
  azure-cli, google-cloud-cli,
+Suggests:
  sysible-controller, sysible-agent,
 Description: Sysible Server — headless engineering platform (all-in-one)
  Turns a Debian base into the Sysible Server: the tools a Linux/DevOps/SRE/platform

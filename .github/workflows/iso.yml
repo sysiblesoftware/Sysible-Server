@@ -27,115 +27,10 @@ permissions:
   contents: write             # needed to create the Release on a tag
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Build the platform's container images HERE, where there is a network and a
-  # Docker daemon, so the installed machine needs neither.
-  #
-  # WHY THIS EXISTS. The platform used to be BUILT FROM SOURCE on the operator's
-  # host on first boot. Every one of those builds fetched from PyPI, npm, Debian
-  # and Alpine, so a host that could not reach them could not finish an install
-  # the installer itself had offered. Reported from a machine whose resolver
-  # could not answer for auth.docker.io:
-  #
-  #   target baseline: failed to solve: failed to fetch anonymous token:
-  #     ... lookup auth.docker.io on 172.16.100.2:53: no such host
-  #
-  # Baking the base images got that machine as far as the first `pip install`
-  # and no further. Shipping the FINISHED images is what makes an airgapped
-  # install work, and it is only possible where there is a builder — here.
-  #
-  # WHY A SEPARATE JOB: the iso job runs inside a debian:bookworm container with
-  # no Docker daemon, so it cannot build images. This one runs on the bare
-  # runner, where Docker is already up.
-  app-images:
-    runs-on: ${{ (github.event.inputs.arch == 'arm64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 120
-    steps:
-      # SLOP is the source of truth for every app: it VENDORS the Controller,
-      # SLEP and Connect under apps/ (see apps/VENDORED.json), so one checkout
-      # builds all eight service images rather than four clones that can drift.
-      - name: Check out the platform
-        uses: actions/checkout@v4
-        with:
-          repository: sysiblesoftware/sysible-linux-operations-platform
-          path: slop
-
-      - name: Build every service image
-        # compose interpolates the WHOLE file before building, so a variable
-        # marked required (${VAR:?...}) stops a build that never uses it. The
-        # first run of this job died on
-        #   required variable SYSIBLE_SSO_SHARED_SECRET is missing a value
-        # having built nothing.
-        #
-        # A placeholder is safe HERE and only here: that variable appears solely
-        # under `environment:`, never under `args:`, so it is a runtime value and
-        # never enters an image layer. The real secret is minted per host by
-        # install.sh, which is what makes SSO between the apps trustworthy. The
-        # guard below is what keeps that true.
-        env:
-          SYSIBLE_SSO_SHARED_SECRET: build-time-placeholder-not-a-secret
-        run: |
-          set -euo pipefail
-          cd slop
-          # If a required variable ever becomes a BUILD ARG, the placeholder below
-          # would be baked into an image layer and shipped as if it were a real
-          # secret. Read the RENDERED config and inspect build args ONLY -- grepping
-          # the file cannot tell a build arg from an environment value.
-          # --profile integrated: the Controller, SLEP and Connect are declared under
-          # that profile, and compose SKIPS a profiled service unless it is asked for.
-          # Without it the five SLOP-native images build, the three apps do not, and
-          # `docker save` is the first thing to notice -- which is how the second run
-          # of this job failed: "No such image: sysible-controller:latest".
-          docker compose -f docker-compose.yml --profile integrated config --format json > /tmp/rendered.json
-          python3 - <<'PYGUARD'
-          import json, sys
-          d = json.load(open("/tmp/rendered.json"))
-          bad = []
-          for name, svc in (d.get("services") or {}).items():
-              b = svc.get("build")
-              args = (b.get("args") or {}) if isinstance(b, dict) else {}
-              vals = args.values() if isinstance(args, dict) else args
-              if any("placeholder-not-a-secret" in str(v) for v in vals):
-                  bad.append(name)
-          if bad:
-              sys.exit("ERROR: the build-time placeholder reached a BUILD ARG in %s. "
-                       "It would be baked into the image and shipped as a secret." % bad)
-          print("build args carry no placeholder: the secret stays a runtime value")
-          PYGUARD
-          docker compose -f docker-compose.yml --profile integrated build --pull
-          docker image ls
-
-      - name: Pull the images that are run rather than built
-        # caddy is the gateway itself — a plain `image:` in the compose file with
-        # no build of its own. Missing it means every app builds and there is
-        # still no front door.
-        run: docker pull caddy:2-alpine
-
-      - name: Save them all into ONE archive
-        # One `docker save` of every image, not one per image. A single archive
-        # stores shared layers once, and every Python service shares the whole
-        # python:3.12-slim base — saved separately it would ship eight times.
-        run: |
-          set -euo pipefail
-          mkdir -p out
-          docker save -o out/sysible-images.tar \
-            sysible-slop-idp sysible-flashback sysible-baseline \
-            sysible-visualizer sysible-slop-updater \
-            sysible-controller:latest sysible-slep:latest sysible-connect:latest \
-            caddy:2-alpine
-          ls -lh out/sysible-images.tar
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app-images-${{ github.event.inputs.arch || 'amd64' }}
-          path: out/sysible-images.tar
-          retention-days: 1
-          compression-level: 0   # already-compressed layers; recompressing costs minutes and saves nothing
 
   iso:
     # arm64 builds run on a native ARM runner (free for public repos); amd64 and
     # tag pushes use the standard x86 runner.
-    needs: app-images
     runs-on: ${{ (github.event.inputs.arch == 'arm64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 120
     container:
@@ -155,52 +50,41 @@ jobs:
       # canonical mark — e.g. the mark was changed but the boot/GRUB/Plymouth PNGs
       # weren't regenerated. Pure sha256 check, no rendering, so it needs no extra
       # deps and can't false-positive on toolchain differences.
-      # The finished images, built by the job above. They go into the chroot so
-      # an installed machine can bring the whole platform up with no registry.
-      - name: Collect the prebuilt platform images
-        uses: actions/download-artifact@v4
-        with:
-          name: app-images-${{ github.event.inputs.arch || 'amd64' }}
-          path: live-build/config/includes.chroot/usr/share/sysible/app-images
 
-
-      - name: Confirm the images arrived, and that no checkout did
-        # The images are what make a first install fast: compose loads them from
-        # disk instead of pulling every base image from Docker Hub and building.
-        # An ISO without them still builds, boots and installs, then fails at the
-        # very last step. Fail here instead.
+      - name: Confirm the ISO carries no platform payload
+        # The ISO ships the OPERATING SYSTEM and everything the platform needs to
+        # RUN — Docker and the compose plugin, Ansible, podman, libvirt/QEMU,
+        # kubectl, helm, k9s, tofu, git, curl, openssl, nftables, jq, sops, eza,
+        # PowerShell. An operator should never be installing a container runtime
+        # by hand before the software they were sold will start.
         #
-        # The SOURCE is deliberately NOT shipped any more, and that is asserted
-        # rather than assumed. A git checkout baked into an ISO was a steady
-        # source of trouble:
+        # It does NOT ship the platform. Both of the ways it used to are gone:
         #
-        #   * it carried actions/checkout's Authorization header, because that
-        #     action's cleanup runs AFTER this job's build and live-build has
-        #     already squashed the tree by then. v1.0.10 shipped a live 60-minute
-        #     GitHub token inside every ISO for exactly that reason. The symptom
-        #     operators saw was not a security warning but
-        #         Username for 'https://github.com':
-        #     on every `sysiblectl update` -- against a PUBLIC repository, because
-        #     git never falls back to anonymous once an Authorization header is
-        #     configured.
-        #   * it was stale the moment it was built, and every host installed from
-        #     that ISO started life behind.
+        #   the SOURCE  carried actions/checkout's Authorization header. That
+        #               action's cleanup runs AFTER live-build has squashed the
+        #               tree, so v1.0.10 shipped a live GitHub token in every
+        #               ISO. What operators met was not a security warning but
+        #                   Username for 'https://github.com':
+        #               on every `sysiblectl update`, against a PUBLIC repo.
+        #   the IMAGES  went stale the same way, more expensively: every app
+        #               change made every existing ISO wrong, and shipping a
+        #               one-line app fix to a fresh install meant a forty-minute
+        #               ISO rebuild.
         #
-        # install-sysible clones the source itself, which is what it did before
-        # and what it still does for an operator who runs it on any other machine.
-        # A fresh install therefore needs to reach github.com -- it no longer
-        # needs to reach Docker Hub, because the images are here.
+        # install-sysible fetches the platform from GitHub, which is what it does
+        # on any other machine. First boot needs a network for that; it needed one
+        # for the source anyway.
         run: |
           set -eu
-          img=live-build/config/includes.chroot/usr/share/sysible/app-images/sysible-images.tar
-          src=live-build/config/includes.chroot/opt/sysible-src
-          [ -s "$img" ] || { echo "ERROR: the prebuilt image archive is missing or empty." >&2; exit 1; }
-          if [ -e "$src" ]; then
-            echo "ERROR: $src exists — a source checkout is being baked into the ISO again." >&2
-            echo "       That is what shipped a live GitHub token in v1.0.10. Remove the step." >&2
-            exit 1
-          fi
-          echo "images: $(du -h "$img" | cut -f1)   source: not shipped (install-sysible clones it)"
+          base=live-build/config/includes.chroot
+          for p in "$base/usr/share/sysible/app-images" "$base/opt/sysible-src"; do
+            if [ -e "$p" ]; then
+              echo "ERROR: $p exists — platform payload is being baked into the ISO again." >&2
+              echo "       The ISO ships the dependencies; install-sysible fetches the platform." >&2
+              exit 1
+            fi
+          done
+          echo "no platform payload in the image — install-sysible fetches it from GitHub"
 
       - name: Verify branding is in sync
         run: sh scripts/verify-branding.sh

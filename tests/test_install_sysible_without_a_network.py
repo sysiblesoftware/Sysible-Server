@@ -1,205 +1,58 @@
-"""A first install must not pull and build the whole platform.
+"""install-sysible must work on a host that already holds the source.
 
-Reported twice from a fresh Server whose resolver could not answer for
-auth.docker.io. Building on the host is hopeless: every service's Dockerfile
-fetches from PyPI, npm, Debian or Alpine, so no amount of BASE images gets past
-the first `pip install`. The only thing that works is shipping the FINISHED
-images, built in CI where there is a builder and a network, and loading them at
-boot.
+WHAT THIS FILE USED TO BE, and why that matters when reading it. It asserted
+that the ISO shipped the platform's FINISHED container images, built in CI, so
+that a first install never had to pull or build anything -- and, before that,
+that it also shipped a git checkout of the source, so a fully airgapped install
+was possible.
 
-Two things have to be true together, and each is worthless alone:
+Both are gone now, deliberately:
 
-  * the images are built and put in the ISO;
-  * nothing rebuilds them afterwards, or compose goes back to PyPI with the
-    images sitting right there.
-
-WHAT CHANGED, and what it costs. There used to be a third: the ISO also shipped
-a git checkout of the platform source, which made a fully AIRGAPPED install
-possible — nothing to fetch at all. That is gone, deliberately, and this file no
-longer claims otherwise:
-
-  * the checkout carried actions/checkout's Authorization header, because that
-    action's cleanup runs AFTER the build and live-build has already squashed
-    the tree. v1.0.10 shipped a live 60-minute GitHub token in every ISO. What
-    operators actually met was not a security warning but
+  * The checkout carried actions/checkout's Authorization header, because that
+    action's cleanup runs AFTER live-build has squashed the tree. v1.0.10
+    shipped a live GitHub token in every ISO, and what operators actually met
+    was not a security warning but
         Username for 'https://github.com':
-    on every `sysiblectl update` — against a PUBLIC repository, because git
+    on every `sysiblectl update` -- against a PUBLIC repository, because git
     never falls back to anonymous once an Authorization header is configured.
-  * it was stale the moment it was built, so every installed host started
-    behind, and the command that would have fixed that is the one the token
-    broke.
+  * The images were removed on instruction: "The isos should not have the
+    container images in them anymore ... install-sysible should install from
+    github not the iso". The ISO's job is the DEPENDENCIES -- Docker, compose,
+    and everything else the platform needs to run -- so that an operator never
+    installs a container runtime by hand. The platform itself is fetched.
 
-So a first install now needs to reach github.com for the source. It does NOT
-need to reach Docker Hub, and it does not build anything — which is what the
-images were for and what the reports above were about. A host with no route out
-at all can no longer install; that is the price, and it is written here rather
-than discovered.
+What the ISO now carries, and must keep carrying, is asserted in
+test_the_iso_ships_dependencies_not_the_platform.py. This file keeps the half
+that is still true and still worth pinning: install-sysible's own behaviour
+when the source is ALREADY on disk.
 
-The tests further down about a host that ALREADY holds the source still apply:
-install-sysible keeps that path for an operator who put a checkout there. The
-ISO simply no longer creates one.
+That path is not dead code. An operator can put a checkout in place themselves,
+and install-sysible must then use it rather than refuse at an unconditional
+network gate -- which is exactly what it used to do:
+
+    say "== checking the internet connection =="
+    _online || { ... "Nothing has been installed." ; exit 1; }
+
+On a host with no route out, the first-boot service ran the script, the script
+exited 1 with "Nothing has been installed", the service retried three times and
+wrote /etc/sysible/apps-failed -- while the source sat on the disk, unread.
+
+These tests run the REAL script against a simulated host, because a grep for
+the fix would pass on the broken version too: the gate it must not run
+unconditionally is still in the file, for the host that does need it.
 """
 import pathlib
 import re
 
 import pytest
-import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-WF = ROOT / ".github/workflows/iso.yml"
-LOADER = ROOT / "live-build/config/includes.chroot/usr/lib/sysible/load-platform-images"
-UNIT = ROOT / "live-build/config/includes.chroot/usr/lib/systemd/system/sysible-platform-images.service"
-ENABLE = ROOT / "live-build/config/hooks/normal/9600-sysible-firstboot.hook.chroot"
-VERIFY = ROOT / "live-build/config/hooks/normal/9500-sysible-verify.hook.chroot"
-
-WORKFLOW = yaml.safe_load(WF.read_text())
-JOBS = WORKFLOW["jobs"]
 
 
 def _code(p):
-    return "\n".join(l for l in p.read_text().splitlines() if not l.lstrip().startswith("#"))
-
-
-def _run_code(job):
-    """The shell actually run by a job's steps, comments stripped.
-
-    NOT yaml.dump of the steps: that re-serialises and re-wraps, so a comment
-    inside a `run:` block comes back as an ordinary line and a line-based scan
-    cannot tell it from a command. That is exactly how a comment mentioning
-    `docker save` made the single-archive check count two.
-    """
-    out = []
-    for st in JOBS[job]["steps"]:
-        for line in (st.get("run") or "").splitlines():
-            if line.strip() and not line.lstrip().startswith("#"):
-                out.append(line)
-    return out
-
-
-def _steps_text(job):
-    return yaml.dump(JOBS[job]["steps"])
-
-
-# ---- CI builds them --------------------------------------------------------
-def test_there_is_a_job_that_builds_the_images():
-    assert "app-images" in JOBS, (
-        "nothing builds the platform's images, so the ISO can only ship a "
-        "recipe that needs the internet to follow")
-
-
-def test_it_builds_outside_the_iso_container():
-    """The iso job runs inside debian:bookworm and has no Docker daemon, so it
-    cannot build images. This one must not inherit that container."""
-    assert "container" not in JOBS["app-images"], \
-        "the image build runs in a container with no Docker daemon"
-
-
-def test_the_iso_waits_for_them():
-    assert JOBS["iso"].get("needs") in ("app-images", ["app-images"]), \
-        "the ISO can be built before its images exist"
-
-
-def test_every_image_is_saved_into_one_archive():
-    """One archive, not one per image: a single `docker save` stores shared
-    layers once, and every Python service shares the whole python base."""
-    # Count INVOCATIONS, not mentions: a comment naming `docker save` made this
-    # count two the first time.
-    calls = [l for l in _run_code("app-images") if "docker save" in l]
-    assert calls, "nothing saves the images"
-    assert len(calls) == 1, f"saved piecemeal — the base ships many times: {calls}"
-    assert "-o" in calls[0], "the archive has no output path"
-
-
-@pytest.mark.parametrize("image", [
-    "sysible-slop-idp", "sysible-flashback", "sysible-baseline",
-    "sysible-visualizer", "sysible-slop-updater",
-    "sysible-controller", "sysible-slep", "sysible-connect",
-    "caddy:2-alpine",
-])
-def test_the_archive_contains_every_service(image):
-    assert image in _steps_text("app-images"), (
-        f"{image} is not saved — the platform would come up missing a service, "
-        f"and on an airgapped host there is no way to fetch it")
-
-
-def test_the_profiled_apps_are_actually_built():
-    """The Controller, SLEP and Connect sit under the `integrated` profile, and
-    compose SKIPS a profiled service unless asked for it. Listing them in the
-    save command is not enough -- that is what failed: five images built, three
-    did not, and `docker save` was the first thing to notice."""
-    build = [l for l in _run_code("app-images") if "compose" in l and " build" in l]
-    assert build, "nothing builds the images"
-    assert all("--profile integrated" in l for l in build), (
-        "the build does not ask for the integrated profile, so the Controller, "
-        "SLEP and Connect are silently skipped")
-
-
-def test_the_gateway_image_is_pulled_not_built():
-    """caddy is a plain `image:` in SLOP's compose with no build of its own, so
-    `compose build` never produces it."""
-    assert "docker pull caddy" in _steps_text("app-images")
-
-
-# ---- the ISO carries the images, and NOT a checkout -------------------------
-def test_the_iso_collects_the_images():
-    assert "download-artifact" in _steps_text("iso")
-
-
-def test_the_iso_does_not_ship_a_source_checkout():
-    """Asserted on the STEPS, not on a substring of the file.
-
-    The first version of this check was `"opt/sysible-src" in t`, and when the
-    checkout was removed it kept passing — because the step that now REFUSES a
-    checkout mentions that path too. A substring match could not tell "ships it"
-    from "forbids it". So: no step may use actions/checkout to put anything
-    under includes.chroot, and no step but the guard may name that path.
-    """
-    steps = JOBS["iso"]["steps"]
-    SRC = "includes.chroot/opt/sysible-src"
-    GUARD = "Confirm the images arrived, and that no checkout did"
-    writers = [s.get("name", "(unnamed)") for s in steps
-               if SRC in " ".join(str(v) for v in s.values())
-               and s.get("name") != GUARD]
-    assert not writers, (
-        "these steps put a source checkout into the image again: %s" % writers)
-    checkouts = [s.get("name", "(unnamed)") for s in steps
-                 if "actions/checkout" in str(s.get("uses", ""))
-                 and "includes.chroot" in str(s.get("with", {}).get("path", ""))]
-    assert not checkouts, (
-        "these steps check a repository out INTO the image: %s" % checkouts)
-
-
-def test_the_build_fails_if_the_images_are_missing():
-    """An ISO without them still builds, boots and installs, then spends the
-    last step pulling and rebuilding everything -- the worst place to find out."""
-    t = _steps_text("iso")
-    assert "exit 1" in t and "sysible-images.tar" in t
-
-
-# ---- the installed system loads them ---------------------------------------
-def test_the_loader_reads_the_shipped_archive():
-    assert "/usr/share/sysible/app-images" in _code(LOADER)
-
-
-def test_the_unit_needs_no_network():
-    """The whole point is a host that cannot reach anything."""
-    assert "network-online" not in UNIT.read_text(), \
-        "an offline load must not wait on a network that is not there"
-
-
-def test_the_unit_is_enabled():
-    assert "systemctl enable sysible-platform-images.service" in ENABLE.read_text()
-
-
-def test_the_chroot_verify_requires_the_images_and_forbids_a_checkout():
-    """The in-chroot hook is the last gate before the squashfs. It has to assert
-    both halves: the images present, and no /opt/sysible-src."""
-    v = _code(VERIFY)
-    assert "sysible-images.tar" in v, "the hook no longer checks for the images"
-    assert "fail " in v, "the check cannot stop the build"
-    assert "/opt/sysible-src" in v and "! -e" in v, (
-        "the hook does not refuse a baked-in source checkout — the thing that "
-        "shipped a live GitHub token in v1.0.10")
+    """File contents with comment lines removed."""
+    return "\n".join(l for l in p.read_text().splitlines()
+                      if not l.lstrip().startswith("#"))
 
 
 # --------------------------------------------------------------------------
@@ -522,24 +375,13 @@ def test_this_repo_ships_a_first_boot_apps_unit():
 
 
 @pytest.mark.parametrize("unit", _APPS_UNITS, ids=lambda p: p.name)
-def test_the_apps_unit_waits_for_the_images_to_be_loaded(unit):
-    text = _code(unit)
-    assert "After=sysible-platform-images.service" in text, (
-        f"{unit.name} does not order after the image loader, so on first boot "
-        f"compose can run before the shipped images are in Docker's store and "
-        f"will try to pull them from a registry this host may not be able to "
-        f"reach at all"
-    )
-
-
-@pytest.mark.parametrize("unit", _APPS_UNITS, ids=lambda p: p.name)
 def test_the_apps_unit_does_not_require_the_network(unit):
     """Wants= is an optimisation; Requires= would block the airgapped install."""
     text = _code(unit)
     assert "Requires=network-online.target" not in text, (
-        f"{unit.name} REQUIRES the network, so a host that ships the platform "
-        f"images and source -- and needs no network to install them -- would "
-        f"never run the install at all"
+        f"{unit.name} REQUIRES the network, so a host whose source is already "
+        f"on disk -- and which needs no network to install it -- would never "
+        f"run the install at all"
     )
     assert "Wants=network-online.target" in text, (
         f"{unit.name} should still WANT the network, so a host that does need to "

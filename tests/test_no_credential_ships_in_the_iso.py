@@ -46,7 +46,12 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ISO_YML = ROOT / ".github/workflows/iso.yml"
-CONFIRM = "Confirm the images arrived, and that no checkout did"
+# The guard step's name. It was "Confirm the images arrived, and that no
+# checkout did" while the ISO carried images; the step now asserts the
+# opposite, so its name changed with it. Kept as a constant because a
+# `next(...)` over the steps raises StopIteration when this drifts, which
+# is how this was caught rather than silently skipping.
+CONFIRM = "Confirm the ISO carries no platform payload"
 SRC_PATH = "includes.chroot/opt/sysible-src"
 
 
@@ -78,42 +83,65 @@ def test_the_build_refuses_to_ship_one_if_a_step_ever_adds_it_back():
     """Belt to the braces above: the guard must be FATAL, not a warning in a
     35-minute log, and it must trigger on a directory that actually exists."""
     body = next(s for s in _steps() if s.get("name") == CONFIRM)["run"]
-    img = tmp_img = None
     import subprocess as _sp
     import tempfile
 
+    # A CLEAN tree is now the correct tree. This used to stage an image archive
+    # first, because the step demanded one; the ISO no longer carries images, so
+    # an empty tree is what must pass and a staged payload is what must fail.
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
-        img = root / "live-build/config/includes.chroot/usr/share/sysible/app-images"
-        img.mkdir(parents=True)
-        (img / "sysible-images.tar").write_text("not empty")
         script = root / "step.sh"
         script.write_text(body)
-
-        # Images present, no checkout: the step passes.
         r = _sp.run(["sh", str(script)], cwd=root, capture_output=True, text=True,
                     timeout=60)
         assert r.returncode == 0, (
-            "the step failed on a correct tree:\n%s%s" % (r.stdout, r.stderr))
+            "the step failed on a clean tree, so it would fail every build:\n%s%s"
+            % (r.stdout, r.stderr))
 
-        # A checkout reappears: the step must FAIL.
-        d = root / "live-build/config/includes.chroot/opt/sysible-src/x"
+    # The credential vector itself: a checkout under includes.chroot. This is
+    # the one that shipped a live token, so it is checked by running the guard,
+    # not by reading it.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        script = root / "step.sh"
+        script.write_text(body)
+        d = root / "live-build/config/includes.chroot/opt/sysible-src/slop/.git"
         d.mkdir(parents=True)
+        (d / "config").write_text(
+            '[http "https://github.com/"]\n'
+            "\textraheader = AUTHORIZATION: basic REDACTED\n")
         r = _sp.run(["sh", str(script)], cwd=root, capture_output=True, text=True,
                     timeout=60)
         assert r.returncode != 0, (
-            "a source checkout was present and the step still exited 0 — the "
-            "build would ship it")
+            "a source checkout carrying a git credential was present and the "
+            "step still exited 0 — the build would ship it, which is exactly "
+            "what v1.0.10 did")
 
 
-def test_the_images_are_still_shipped_and_still_required():
-    """The counterweight. Dropping the SOURCE must not quietly drop the images
-    too: they are what stops a first install pulling and building everything."""
-    body = next(s for s in _steps() if s.get("name") == CONFIRM)["run"]
-    assert "sysible-images.tar" in body
-    assert "exit 1" in body, "a missing image archive does not stop the build"
-    assert any("download-artifact" in str(s.get("uses", "")) for s in _steps()), (
-        "nothing collects the prebuilt images any more")
+def test_removing_the_checkout_left_the_installer_a_way_to_get_the_source():
+    """The counterweight, rewritten because the old one asserted the opposite.
+
+    It used to read "the images are still shipped and still required" and
+    checked for sysible-images.tar in the guard plus a download-artifact step.
+    Both are gone on instruction -- "install-sysible should install from github
+    not the iso" -- so that test asserted the ISO still did the very thing it
+    had just been changed not to do.
+
+    The counterweight that still matters is this: the shipped copy of the
+    source was removed, so the installer must be able to FETCH it. If that
+    ever stops being true, the ISO installs an operating system and no
+    platform, and nothing else in this file would notice.
+    """
+    installer = ROOT / "packages/sysible-cli/install-sysible"
+    if not installer.is_file():
+        pytest.skip("no install-sysible in this repo")
+    code = "\n".join(l for l in installer.read_text().splitlines()
+                      if not l.lstrip().startswith("#"))
+    assert "github.com/sysiblesoftware" in code, (
+        "install-sysible names no GitHub source, and the ISO no longer carries "
+        "one — there would be nothing left to install from")
+    assert re.search(r"clone\b", code), "install-sysible clones nothing"
 
 
 def test_no_network_git_call_can_stop_for_a_credential():

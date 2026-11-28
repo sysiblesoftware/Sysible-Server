@@ -214,9 +214,26 @@ echo "sysible-verify: OK — no AI model feature in the image (no sysible ai, no
 # program is actually on PATH in the finished image, and the build dies if it
 # is not.
 echo "== sysible-verify: tools the product pages promise =="
+# ADDED: the cloud and virtualization tools, and the headline Debian ones.
+#
+# az and gcloud rest ENTIRELY on the vendor hook (both are in build.sh's VEND
+# set, so neither reaches the generated toolkit list) -- exactly the position
+# helm, k9s and sops were in when an ISO shipped without them. age and gh do
+# come from the toolkit list, but nothing asserted either had landed.
+#
+# virsh and qemu-img are the libvirt/QEMU capability. The summary below this
+# loop has claimed for some time that libvirt/QEMU is "installed above and
+# checked by name"; it was not checked by anything. It is now.
+#
+# yq, socat, git-lfs, shellcheck, rclone and wg are newly promised in the
+# metapackage. They are hard entries in the generated list, so apt would fail
+# the build if they vanished from Debian -- but NOT if someone edits them out
+# of debian/control, which is the likelier way a promise gets broken.
 for _t in docker kubectl helm k9s tofu ansible ansible-playbook podman \
           git curl openssl nft jq \
-          sops eza pwsh; do
+          sops eza pwsh \
+          az gcloud virsh qemu-img age gh \
+          yq socat git-lfs shellcheck rclone wg; do
     command -v "$_t" >/dev/null 2>&1 \
         || fail "$_t is NOT in the image, but the product pages list it as included"
 done
@@ -240,27 +257,35 @@ done
 # SSO/updater/Baseline/Flashback secrets. `install-sysible slop` is one of the
 # two questions the installer asks, so a host that cannot run it is a broken
 # promise made during the install itself.
-# The platform's IMAGES ship. Its source deliberately does not.
+# THE ISO CARRIES THE DEPENDENCIES, NOT THE PLATFORM.
 #
-# An ISO without the images still builds, boots and installs, then spends the
-# last step pulling every base image from Docker Hub and rebuilding — slow, and
-# a hard failure on a host with no route out. That is the worst place to
-# discover it, so discover it here.
+# Everything the platform needs to run is installed above and checked by name:
+# Docker and the compose plugin, Ansible, podman, libvirt/QEMU, kubectl, helm,
+# k9s, tofu, git, curl, openssl, nftables, jq, sops, eza and PowerShell. That is
+# the ISO's job — an operator should never be installing a container runtime by
+# hand before the software they were sold will start.
 #
-# The SOURCE is the other half of what used to ship, and it is now asserted
-# ABSENT. A git checkout baked into an ISO carried actions/checkout's
-# Authorization header (its cleanup runs after the build, by which time
-# live-build has squashed the tree), so v1.0.10 shipped a live GitHub token in
-# every ISO — and the symptom operators met was not a warning but
-#     Username for 'https://github.com':
-# on every `sysiblectl update`, against a PUBLIC repository. It was also stale
-# the moment it was built. install-sysible clones the source itself, as it
-# always did on any other machine.
-PIMG=/usr/share/sysible/app-images/sysible-images.tar
+# The PLATFORM is not the ISO's job, and both of the ways it used to be baked in
+# are now asserted ABSENT here:
+#
+#   the SOURCE  carried actions/checkout's Authorization header — that action's
+#               cleanup runs after live-build has already squashed the tree, so
+#               v1.0.10 shipped a live GitHub token in every ISO. What operators
+#               met was not a warning but
+#                   Username for 'https://github.com':
+#               on every `sysiblectl update`, against a PUBLIC repository.
+#   the IMAGES  went stale the same way, just more expensively: every app change
+#               made every existing ISO wrong, and shipping a one-line app fix
+#               to a fresh install meant a forty-minute ISO rebuild.
+#
+# install-sysible fetches the platform from GitHub, which is what it does on any
+# other machine. A first boot needs a network for that — it needed one for the
+# source anyway.
+PIMG=/usr/share/sysible/app-images
 PSRC=/opt/sysible-src
-[ -s "$PIMG" ] || fail "the prebuilt platform images are missing ($PIMG) — a first install would have to pull and build everything"
+[ ! -e "$PIMG" ] || fail "$PIMG exists — container images are being baked into the image again. The ISO ships the dependencies; install-sysible fetches the platform."
 [ ! -e "$PSRC" ] || fail "$PSRC exists — a source checkout is being baked into the image again, which is how a live GitHub token shipped in v1.0.10"
-echo "sysible-verify: OK — platform images ($(du -h "$PIMG" | cut -f1)) shipped; source is cloned by install-sysible."
+echo "sysible-verify: OK — dependencies present, no platform payload (install-sysible fetches it)."
 
 echo "sysible-verify: OK — kubectl, helm, k9s, tofu, compose and the SLOP prerequisites are all present."
 
